@@ -130,11 +130,16 @@ if (-not (Wait-HttpOk -Url "http://127.0.0.1:8000/api/health" -TimeoutSeconds 20
 Write-Host "后端已就绪：http://127.0.0.1:8000/api/health" -ForegroundColor Green
 
 Write-Step "启动 Streamlit 前端"
-$FrontendCommand = "cd /d `"$ProjectRoot`" && `"$VenvPython`" -m streamlit run app.py --server.address 127.0.0.1 --server.port 8501"
+$FrontendCommand = "cd /d `"$ProjectRoot`" && `"$VenvPython`" -m streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.gatherUsageStats false"
 Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $FrontendCommand -WindowStyle Normal
 
+Write-Step "等待前端工作台就绪"
+if (-not (Wait-HttpOk -Url "http://127.0.0.1:8501" -TimeoutSeconds 40)) {
+    throw "前端未能在 40 秒内启动。请查看 Streamlit 命令行窗口中的错误信息。"
+}
+Write-Host "前端已就绪：http://127.0.0.1:8501" -ForegroundColor Green
+
 Write-Step "打开前端工作台"
-Start-Sleep -Seconds 5
 Start-Process "http://127.0.0.1:8501"
 
 Write-Host ""
