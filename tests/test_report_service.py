@@ -8,7 +8,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.dss_frontend.llm_cards import build_structured_llm_sections
-from src.dss_frontend.report_service import build_case_options, build_prediction_context_from_validation
+from src.dss_frontend.report_service import (
+    build_case_options,
+    build_confusion_matrix_business_rows,
+    build_metric_cards,
+    build_prediction_context_from_validation,
+    build_prediction_error_type,
+    build_priority_distribution,
+    build_probability_distribution,
+    build_validation_result_summary,
+)
 
 
 def test_build_case_options_prioritizes_representative_cases():
@@ -77,3 +86,73 @@ def test_validation_context_and_llm_sections_are_report_ready():
     assert "客户画像" not in sections["customer_profile"]
     assert "模型输出" not in sections["marketing_strategy"]
     assert "不参与概率预测" in sections["risk_note"]
+
+
+def test_validation_summary_and_priority_distribution_are_business_readable():
+    frame = pd.DataFrame(
+        [
+            {
+                "customer_id": 1,
+                "actual_label": "yes",
+                "predicted_label": "yes",
+                "is_correct": True,
+                "conversion_probability": 0.82,
+                "priority_level": "高价值客户",
+            },
+            {
+                "customer_id": 2,
+                "actual_label": "no",
+                "predicted_label": "yes",
+                "is_correct": False,
+                "conversion_probability": 0.61,
+                "priority_level": "中价值客户",
+            },
+            {
+                "customer_id": 3,
+                "actual_label": "no",
+                "predicted_label": "no",
+                "is_correct": True,
+                "conversion_probability": 0.22,
+                "priority_level": "低响应客户",
+            },
+        ]
+    )
+
+    summary = build_validation_result_summary(frame)
+    priority = build_priority_distribution(frame)
+    probability = build_probability_distribution(frame)
+
+    assert summary == {
+        "total": 3,
+        "correct": 2,
+        "incorrect": 1,
+        "actual_yes": 1,
+        "predicted_yes": 2,
+        "accuracy": 0.6667,
+    }
+    assert priority["营销优先级"].tolist() == ["高价值客户", "中价值客户", "低响应客户"]
+    assert priority["真实购买率"].tolist() == [1.0, 0.0, 0.0]
+    assert probability.columns.tolist() == ["真实标签", "预测概率"]
+    assert probability["真实标签"].tolist() == ["购买 yes", "未购买 no", "未购买 no"]
+
+
+def test_metric_cards_confusion_rows_and_error_type_are_explainable():
+    metrics = {
+        "auc": 0.77,
+        "accuracy": 0.8,
+        "precision": 0.3,
+        "recall": 0.58,
+        "f1": 0.39,
+        "confusion_matrix": {"values": [[90, 20], [5, 15]]},
+    }
+
+    cards = build_metric_cards(metrics)
+    rows = build_confusion_matrix_business_rows(metrics)
+
+    assert [card["label"] for card in cards] == ["AUC", "Accuracy", "Precision", "Recall", "F1"]
+    assert "真实购买客户中" in cards[3]["explanation"]
+    assert rows[0]["业务含义"] == "正确识别未购买客户"
+    assert rows[2]["数量"] == 5
+    assert build_prediction_error_type("no", "yes").startswith("假阳性")
+    assert build_prediction_error_type("yes", "no").startswith("假阴性")
+    assert build_prediction_error_type("yes", "yes") == "预测正确"

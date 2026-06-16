@@ -11,9 +11,14 @@ from src.dss_frontend.data_loader import REQUIRED_BUSINESS_FIELDS
 from src.dss_frontend.llm_cards import build_structured_llm_sections
 from src.dss_frontend.report_service import (
     build_case_options,
+    build_confusion_matrix_business_rows,
     build_dataset_summary,
+    build_metric_cards,
+    build_priority_distribution,
     build_prediction_context_from_manual,
     build_prediction_context_from_validation,
+    build_probability_distribution,
+    build_validation_result_summary,
     load_evaluation_summary,
     load_validation_predictions,
 )
@@ -155,14 +160,25 @@ def _render_dataset_tab(summary: dict) -> None:
 
 def _render_metrics_tab(summary: dict) -> None:
     metrics = summary["metrics"]
-    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
-    col1.metric("AUC", f"{metrics['auc']:.4f}")
-    col2.metric("Accuracy", f"{metrics['accuracy']:.4f}")
-    col3.metric("Precision", f"{metrics['precision']:.4f}")
-    col4.metric("Recall", f"{metrics['recall']:.4f}")
-    col5.metric("F1", f"{metrics['f1']:.4f}")
+    validation_frame = get_validation_predictions()
+    validation_summary = build_validation_result_summary(validation_frame)
 
-    left, right = st.columns([0.9, 1.1], gap="large")
+    st.subheader("模型效果指标")
+    metric_cards = build_metric_cards(metrics)
+    metric_columns = st.columns(5, gap="medium")
+    for column, card in zip(metric_columns, metric_cards):
+        column.metric(card["label"], card["value"])
+        column.caption(card["explanation"])
+
+    st.subheader("验证集预测摘要")
+    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
+    col1.metric("验证集客户数", f"{validation_summary['total']:,}")
+    col2.metric("预测正确", f"{validation_summary['correct']:,}")
+    col3.metric("预测错误", f"{validation_summary['incorrect']:,}")
+    col4.metric("真实购买客户", f"{validation_summary['actual_yes']:,}")
+    col5.metric("预测购买客户", f"{validation_summary['predicted_yes']:,}")
+
+    left, right = st.columns([0.95, 1.05], gap="large")
     with left:
         st.subheader("混淆矩阵")
         matrix = metrics["confusion_matrix"]["values"]
@@ -178,6 +194,8 @@ def _render_metrics_tab(summary: dict) -> None:
         )
         fig.update_layout(height=360, margin=dict(l=20, r=20, t=20, b=20))
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        business_rows = pd.DataFrame(build_confusion_matrix_business_rows(metrics))
+        st.dataframe(business_rows, hide_index=True, use_container_width=True)
     with right:
         st.subheader("主要影响因素")
         influence_frame = pd.DataFrame(summary["feature_influences"])
@@ -189,6 +207,58 @@ def _render_metrics_tab(summary: dict) -> None:
             use_container_width=True,
         )
         st.caption("系数方向用于辅助解释模型，不等同于因果关系。")
+
+    left, right = st.columns([1.05, 0.95], gap="large")
+    with left:
+        st.subheader("预测概率分布")
+        probability_frame = build_probability_distribution(validation_frame)
+        fig = go.Figure()
+        for label, color in [("未购买 no", "#93c5fd"), ("购买 yes", "#2563eb")]:
+            values = probability_frame.loc[probability_frame["真实标签"] == label, "预测概率"]
+            fig.add_trace(
+                go.Histogram(
+                    x=values,
+                    name=label,
+                    opacity=0.72,
+                    marker_color=color,
+                    xbins=dict(start=0, end=1, size=0.05),
+                )
+            )
+        fig.update_layout(
+            barmode="overlay",
+            height=360,
+            margin=dict(l=20, r=20, t=20, b=20),
+            xaxis_title="模型预测购买概率",
+            yaxis_title="客户数",
+            legend_title="真实标签",
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.caption("如果真实购买客户更多集中在高概率区间，说明模型具有一定客户排序能力。")
+    with right:
+        st.subheader("营销优先级分布")
+        priority_frame = build_priority_distribution(validation_frame)
+        fig = go.Figure(
+            data=[
+                go.Bar(
+                    x=priority_frame["营销优先级"],
+                    y=priority_frame["客户数"],
+                    marker_color=["#2563eb", "#f59e0b", "#94a3b8"],
+                    text=priority_frame["客户数"],
+                    textposition="outside",
+                )
+            ]
+        )
+        fig.update_layout(
+            height=300,
+            margin=dict(l=20, r=20, t=20, b=20),
+            yaxis_title="客户数",
+            showlegend=False,
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        display_frame = priority_frame.copy()
+        display_frame["真实购买率"] = display_frame["真实购买率"].map(lambda value: f"{value * 100:.1f}%")
+        display_frame["平均预测概率"] = display_frame["平均预测概率"].map(lambda value: f"{value * 100:.1f}%")
+        st.dataframe(display_frame, hide_index=True, use_container_width=True)
 
 
 def _render_prediction_tab(validation_frame: pd.DataFrame, summary: dict, bundle) -> dict:
@@ -290,8 +360,18 @@ def _render_prediction_result(context: dict) -> None:
         if result.get("actual_label") is None:
             st.info("该客户来自手动输入，没有真实标签。")
         else:
-            st.write(f"真实标签：`{result['actual_label']}`")
-            st.write(f"预测是否正确：`{'是' if result['is_correct'] else '否'}`")
+            status_text = "预测正确" if result["is_correct"] else "预测错误"
+            status_method = st.success if result["is_correct"] else st.warning
+            status_method(f"{status_text}：{result['error_type']}")
+            validation_rows = pd.DataFrame(
+                [
+                    {"项目": "真实标签", "结果": result["actual_label"]},
+                    {"项目": "预测标签", "结果": result["predicted_label"]},
+                    {"项目": "预测是否正确", "结果": "是" if result["is_correct"] else "否"},
+                    {"项目": "误判类型", "结果": result["error_type"]},
+                ]
+            )
+            st.dataframe(validation_rows, hide_index=True, use_container_width=True)
         st.write(f"推荐产品：`{result['product_name']}`")
         st.write(result["recommended_action"])
 
