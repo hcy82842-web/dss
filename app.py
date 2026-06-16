@@ -8,21 +8,25 @@ import streamlit as st
 
 from src.dss_backend.ml.inference import load_model_bundle
 from src.dss_frontend.data_loader import REQUIRED_BUSINESS_FIELDS
-from src.dss_frontend.llm_cards import build_structured_llm_sections
+from src.dss_frontend.llm_cards import generate_llm_sections
 from src.dss_frontend.report_service import (
     build_case_options,
+    build_case_option_label,
     build_confusion_matrix_business_rows,
     build_dataset_summary,
+    build_feature_display_rows,
     build_metric_cards,
     build_priority_distribution,
+    build_priority_rule_rows,
     build_prediction_context_from_manual,
     build_prediction_context_from_validation,
     build_probability_distribution,
+    build_variable_reference_rows,
     build_validation_result_summary,
     load_evaluation_summary,
     load_validation_predictions,
 )
-from src.dss_frontend.schema import BUSINESS_INPUT_COLUMNS, MODEL_FEATURE_COLUMNS
+from src.dss_frontend.schema import BUSINESS_INPUT_COLUMNS
 from src.dss_frontend.theme import apply_theme
 from src.dss_frontend.ui_components import (
     render_decision_cards,
@@ -32,6 +36,8 @@ from src.dss_frontend.ui_components import (
     render_report_card,
     render_section_title,
     render_status_card,
+    render_static_table,
+    render_variable_cards,
 )
 
 DATA_PATH = Path("data/bank-additional-full.csv")
@@ -68,6 +74,7 @@ def main() -> None:
         initial_sidebar_state="collapsed",
     )
     apply_theme()
+    _init_session_state()
 
     _render_header()
     _assert_required_artifacts()
@@ -90,9 +97,22 @@ def main() -> None:
     with tab_metrics:
         _render_metrics_tab(summary)
     with tab_prediction:
-        context = _render_prediction_tab(validation_frame, summary, bundle)
+        _render_prediction_tab(validation_frame, summary, bundle)
     with tab_llm:
-        _render_llm_tab(context)
+        _render_llm_tab()
+
+
+def _init_session_state() -> None:
+    defaults = {
+        "prediction_context": None,
+        "llm_sections": None,
+        "llm_status": None,
+        "selected_customer_id": None,
+        "prediction_mode": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def _assert_required_artifacts() -> None:
@@ -157,7 +177,8 @@ def _render_dataset_tab(summary: dict) -> None:
             "duration 字段处理",
             "duration 是通话发生后才知道的结果变量，因此只用于历史复盘展示，不参与营销前客户筛选预测。",
         )
-        st.code(" / ".join(MODEL_FEATURE_COLUMNS), language="text")
+        render_section_title("变量中英文对照", "VARIABLES")
+        render_variable_cards(build_variable_reference_rows())
     with right:
         render_section_title("目标变量分布", "TARGET")
         fig = go.Figure(
@@ -227,7 +248,7 @@ def _render_metrics_tab(summary: dict) -> None:
 
     left, right = st.columns([1.05, 0.95], gap="large")
     with left:
-        render_section_title("预测概率分布", "PROBABILITY")
+        render_section_title("验证集预测概率分布", "VALIDATION PROBABILITY")
         probability_frame = build_probability_distribution(validation_frame)
         fig = go.Figure()
         for label, color in [("未购买 no", "#93c5fd"), ("购买 yes", "#2563eb")]:
@@ -244,13 +265,18 @@ def _render_metrics_tab(summary: dict) -> None:
         fig.update_layout(
             barmode="overlay",
             height=360,
-            margin=dict(l=20, r=20, t=20, b=20),
+            margin=dict(l=36, r=24, t=34, b=42),
             xaxis_title="模型预测购买概率",
             yaxis_title="客户数",
             legend_title="真实标签",
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        render_report_card("图表解读", "如果真实购买客户更多集中在高概率区间，说明模型具有一定客户排序能力。")
+        render_report_card(
+            "图表来源与解读",
+            "该图来自 artifacts/validation_predictions.csv，即 30% 验证集。"
+            "它展示模型在验证集上给出的购买概率分布，不包含训练集，也不是全体数据集。"
+            "如果真实购买客户更多集中在高概率区间，说明模型具有一定客户排序能力。",
+        )
     with right:
         render_section_title("营销优先级分布", "PRIORITY")
         priority_frame = build_priority_distribution(validation_frame)
@@ -262,57 +288,80 @@ def _render_metrics_tab(summary: dict) -> None:
                     marker_color=["#2563eb", "#f59e0b", "#94a3b8"],
                     text=priority_frame["客户数"],
                     textposition="outside",
+                    cliponaxis=False,
                 )
             ]
         )
         fig.update_layout(
-            height=300,
-            margin=dict(l=20, r=20, t=20, b=20),
+            height=330,
+            margin=dict(l=36, r=24, t=52, b=42),
             yaxis_title="客户数",
+            yaxis=dict(range=[0, float(priority_frame["客户数"].max()) * 1.18]),
             showlegend=False,
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         display_frame = priority_frame.copy()
         display_frame["真实购买率"] = display_frame["真实购买率"].map(lambda value: f"{value * 100:.1f}%")
         display_frame["平均预测概率"] = display_frame["平均预测概率"].map(lambda value: f"{value * 100:.1f}%")
-        st.dataframe(display_frame, hide_index=True, use_container_width=True)
+        render_static_table(
+            display_frame.to_dict("records"),
+            ["营销优先级", "客户数", "真实购买数", "真实购买率", "平均预测概率"],
+        )
+        render_static_table(build_priority_rule_rows(), ["概率区间", "客户分类", "决策含义"])
 
 
-def _render_prediction_tab(validation_frame: pd.DataFrame, summary: dict, bundle) -> dict:
+def _render_prediction_tab(validation_frame: pd.DataFrame, summary: dict, bundle) -> None:
     render_section_title("选择验证集样本或手动输入客户", "CASE VALIDATION")
     mode = st.radio(
         "验证方式",
         ["验证集样本", "手动输入客户"],
         horizontal=True,
     )
+    if st.session_state.get("prediction_mode") != mode:
+        st.session_state["prediction_mode"] = mode
+        st.session_state["prediction_context"] = None
+        st.session_state["llm_sections"] = None
+        st.session_state["llm_status"] = None
 
     if mode == "验证集样本":
         context = _build_validation_case_context(validation_frame, summary)
     else:
         context = _build_manual_case_context(bundle)
 
-    _render_prediction_result(context)
-    st.session_state["current_prediction_context"] = context
-    return context
+    if context is not None:
+        _render_prediction_result(context)
+        if st.button("生成客户画像与营销建议", use_container_width=True):
+            with st.spinner("正在生成画像与营销建议..."):
+                result = generate_llm_sections(context)
+                st.session_state["llm_sections"] = result["sections"]
+                st.session_state["llm_status"] = result["llm_status"]
+            render_status_card("画像与营销建议已生成", "请切换到第 4 个 Tab 查看 LLM 画像与营销建议。", ok=True)
 
 
-def _build_validation_case_context(validation_frame: pd.DataFrame, summary: dict) -> dict:
+def _build_validation_case_context(validation_frame: pd.DataFrame, summary: dict) -> dict | None:
     case_options = build_case_options(validation_frame, summary["representative_cases"])
     label_map = {
-        int(row.customer_id): (
-            f"客户 {int(row.customer_id)} | 真实 {row.actual_label} | "
-            f"预测 {row.predicted_label} | 概率 {row.conversion_probability * 100:.1f}%"
-        )
-        for row in validation_frame.itertuples()
-        if int(row.customer_id) in case_options
+        int(row["customer_id"]): build_case_option_label(row)
+        for _, row in validation_frame.iterrows()
+        if int(row["customer_id"]) in case_options
     }
     selected_id = st.selectbox(
         "选择验证集客户",
         options=case_options,
         format_func=lambda value: label_map.get(int(value), f"客户 {value}"),
     )
-    row = validation_frame.loc[validation_frame["customer_id"] == selected_id].iloc[0]
-    return build_prediction_context_from_validation(row, summary["feature_influences"])
+    st.session_state["selected_customer_id"] = int(selected_id)
+    if st.button("运行逻辑回归预测", use_container_width=True):
+        row = validation_frame.loc[validation_frame["customer_id"] == selected_id].iloc[0]
+        context = build_prediction_context_from_validation(row, summary["feature_influences"])
+        st.session_state["prediction_context"] = context
+        st.session_state["llm_sections"] = None
+        st.session_state["llm_status"] = None
+    context = st.session_state.get("prediction_context")
+    if context is None:
+        render_status_card("等待预测", "请选择一个验证集客户，并点击“运行逻辑回归预测”查看结果。", ok=True)
+        return None
+    return context
 
 
 def _build_manual_case_context(bundle) -> dict:
@@ -335,7 +384,7 @@ def _build_manual_case_context(bundle) -> dict:
             duration = st.number_input("通话时长（仅复盘展示）", min_value=0, max_value=5000, value=0)
             pdays = st.number_input("距上次联系天数", min_value=0, max_value=999, value=999)
             poutcome = st.selectbox("历史结果", ["unknown", "success", "failure", "nonexistent"])
-            st.form_submit_button("生成预测结果", use_container_width=True)
+            submitted = st.form_submit_button("运行逻辑回归预测", use_container_width=True)
 
     raw_values = {
         "age": age,
@@ -353,7 +402,16 @@ def _build_manual_case_context(bundle) -> dict:
         "previous": previous,
         "poutcome": poutcome,
     }
-    return build_prediction_context_from_manual(raw_values, bundle)
+    if submitted:
+        context = build_prediction_context_from_manual(raw_values, bundle)
+        st.session_state["prediction_context"] = context
+        st.session_state["llm_sections"] = None
+        st.session_state["llm_status"] = None
+    context = st.session_state.get("prediction_context")
+    if context is None:
+        render_status_card("等待预测", "请填写客户字段，并点击“运行逻辑回归预测”查看结果。", ok=True)
+        return None
+    return context
 
 
 def _render_prediction_result(context: dict) -> None:
@@ -375,10 +433,7 @@ def _render_prediction_result(context: dict) -> None:
     left, right = st.columns([1, 1], gap="large")
     with left:
         render_section_title("客户特征", "FEATURES")
-        feature_frame = pd.DataFrame(
-            [{"字段": key, "取值": value} for key, value in features.items() if key in BUSINESS_INPUT_COLUMNS]
-        )
-        st.dataframe(feature_frame, hide_index=True, use_container_width=True)
+        render_static_table(build_feature_display_rows(features), ["字段", "英文变量", "取值"])
     with right:
         render_section_title("验证结果", "RESULT")
         if result.get("actual_label") is None:
@@ -398,18 +453,20 @@ def _render_prediction_result(context: dict) -> None:
         render_report_card("推荐动作", f"{result['product_name']}。{result['recommended_action']}")
 
 
-def _render_llm_tab(context: dict) -> None:
+def _render_llm_tab() -> None:
+    context = st.session_state.get("prediction_context")
+    sections = st.session_state.get("llm_sections")
+    llm_status = st.session_state.get("llm_status")
     if context is None:
-        context = st.session_state.get("current_prediction_context")
-    if context is None:
-        st.info("请先在“客户预测验证”页选择或输入一个客户。")
+        render_status_card("尚未完成预测", "请先在第 3 个 Tab 选择或输入客户，并运行逻辑回归预测。", ok=False)
         return
-
-    sections = build_structured_llm_sections(context)
+    if sections is None:
+        render_status_card("尚未生成画像", "请回到第 3 个 Tab 点击“生成客户画像与营销建议”。", ok=False)
+        return
     render_status_card(
-        "LLM 解释边界",
+        f"LLM状态：{llm_status}",
         "LLM 解释基于模型输出和客户字段生成，不参与购买概率预测，也不改变营销优先级。",
-        ok=True,
+        ok=llm_status == "DeepSeek生成成功",
     )
     col1, col2, col3 = st.columns(3, gap="medium")
     with col1:

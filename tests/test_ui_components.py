@@ -8,7 +8,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.dss_frontend.ui_components import build_candidate_snapshot, build_filter_summary_items
-from src.dss_frontend.ui_components import render_decision_cards, render_metric_card, render_report_card
+from src.dss_frontend.ui_components import (
+    render_decision_cards,
+    render_metric_card,
+    render_report_card,
+    render_static_table,
+    render_variable_cards,
+)
 
 
 def test_build_filter_summary_items_formats_selected_values():
@@ -80,9 +86,22 @@ def test_report_card_components_render_expected_markup(monkeypatch):
     render_metric_card("AUC", "0.7693", "区分购买和未购买客户的排序能力。")
     render_report_card("解释边界", "系数方向不等同于因果关系。")
     render_decision_cards([{"label": "推荐渠道", "value": "电话", "note": "高价值客户优先触达"}])
+    render_static_table([{"字段": "职业", "取值": "管理人员"}], ["字段", "取值"])
+    render_variable_cards(
+        [
+            {
+                "英文变量": "age",
+                "中文含义": "年龄",
+                "是否进入模型": "是",
+                "说明": "客户年龄。",
+            }
+        ]
+    )
 
     joined = "\n".join(rendered)
     assert "metric-card" in joined
     assert "report-card" in joined
     assert "decision-grid" in joined
+    assert "static-table" in joined
+    assert "variable-card" in joined
     assert "区分购买和未购买客户" in joined

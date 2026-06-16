@@ -1,6 +1,43 @@
 from __future__ import annotations
 
+import json
+from os import getenv
 from typing import Any
+
+import httpx
+
+from src.dss_frontend.report_service import translate_field_value
+
+
+def _feature_text(features: dict[str, Any], field: str) -> str:
+    return translate_field_value(field, features.get(field))
+
+
+def _risk_phrase(features: dict[str, Any]) -> str:
+    risks = []
+    if str(features.get("loan")) == "yes":
+        risks.append("客户存在个人贷款，沟通时应避免造成资金压力")
+    if str(features.get("housing")) == "yes":
+        risks.append("客户存在住房贷款，建议强调资金流动性安排")
+    if str(features.get("campaign", 0)).isdigit() and int(features.get("campaign", 0)) >= 3:
+        risks.append("本轮联系次数较多，需要控制打扰频率")
+    if str(features.get("poutcome")) == "failure":
+        risks.append("历史营销结果失败，需要降低强推语气")
+    return "；".join(risks) if risks else "当前字段未显示明显触达风险，仍需遵守合规沟通要求"
+
+
+def _script_angle(features: dict[str, Any], result: dict[str, Any]) -> str:
+    job = str(features.get("job"))
+    age = int(features.get("age", 0) or 0)
+    if job in {"retired", "management"} or age >= 55:
+        return "突出稳健、期限清晰和资金安排确定性"
+    if job in {"student", "unemployed"} or age <= 30:
+        return "语气保持轻量，强调可了解、不施压和按需配置"
+    if str(features.get("housing")) == "yes" or str(features.get("loan")) == "yes":
+        return "强调不影响日常资金周转，建议从小额或短期限方案了解"
+    if "高" in str(result.get("priority_level")):
+        return "突出匹配度较高，可直接邀请客户了解产品细节"
+    return "先建立兴趣，再根据反馈决定是否深入介绍"
 
 
 def build_customer_explanation(customer: dict, decision: dict) -> str:
@@ -40,21 +77,26 @@ def build_structured_llm_sections(prediction_context: dict[str, Any]) -> dict[st
     probability_text = f"{float(result['conversion_probability']) * 100:.1f}%"
     positive = "、".join(context.get("positive_factors") or ["当前可用特征整体支持该判断"])
     negative = "、".join(context.get("negative_factors") or ["未发现明显负向主导因素"])
+    risk_phrase = _risk_phrase(features)
+    script_angle = _script_angle(features, result)
 
     profile = (
-        f"该客户年龄为 {features.get('age')}，职业为 {features.get('job')}，"
-        f"婚姻状态为 {features.get('marital')}，最近联系月份为 {features.get('month')}。"
+        f"该客户年龄为 {features.get('age')} 岁，职业为{_feature_text(features, 'job')}，"
+        f"婚姻状态为{_feature_text(features, 'marital')}，教育水平为{_feature_text(features, 'education')}。"
+        f"贷款情况显示：{_feature_text(features, 'housing')}，{_feature_text(features, 'loan')}。"
+        f"最近联系月份为{_feature_text(features, 'month')}，联系渠道为{_feature_text(features, 'contact')}。"
         f"模型预测其订购定期存款的概率为 {probability_text}，"
-        f"对应预测类别为 {result['predicted_label']}，营销优先级为 {result['priority_level']}。"
+        f"对应营销优先级为{result['priority_level']}。"
     )
     strategy = (
         f"建议采用{result['recommended_channel']}触达，主推{result['product_name']}。"
         f"主要正向依据包括：{positive}；需要关注的负向或不确定因素包括：{negative}。"
-        f"具体执行动作：{result['recommended_action']}"
+        f"具体执行动作：{result['recommended_action']}沟通侧重点建议为：{script_angle}。"
     )
     risk = (
         "LLM 解释仅基于逻辑回归模型输出和当前客户字段生成，不参与概率预测。"
         f"当前字段完整度为 {float(context.get('data_completeness', 1.0)) * 100:.0f}%。"
+        f"风险提示：{risk_phrase}。"
     )
     if result.get("actual_label") is not None:
         correctness = "预测正确" if result.get("is_correct") else "预测错误"
@@ -67,7 +109,87 @@ def build_structured_llm_sections(prediction_context: dict[str, Any]) -> dict[st
         "marketing_strategy": strategy,
         "risk_note": risk,
         "marketing_script": (
-            f"您好，我们结合您的资金配置需求，为您推荐了解{result['product_name']}。"
-            "该产品更适合稳健型资金安排，您可以根据自身资金流动性需要进一步确认。"
+            f"您好，我们根据您当前的资金安排场景，想邀请您了解一下{result['product_name']}。"
+            f"这次建议主要考虑到您的职业和历史联系情况，沟通重点是{script_angle}。"
+            "您可以先了解期限、起点和流动性安排，再决定是否进一步办理。"
         ),
+    }
+
+
+def generate_llm_sections(prediction_context: dict[str, Any]) -> dict[str, Any]:
+    api_key = getenv("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        return {
+            "sections": build_structured_llm_sections(prediction_context),
+            "llm_status": "fallback模板生成",
+        }
+
+    try:
+        sections = _call_deepseek_for_sections(prediction_context, api_key)
+        return {"sections": sections, "llm_status": "DeepSeek生成成功"}
+    except Exception:
+        return {
+            "sections": build_structured_llm_sections(prediction_context),
+            "llm_status": "fallback模板生成",
+        }
+
+
+def _call_deepseek_for_sections(prediction_context: dict[str, Any], api_key: str) -> dict[str, str]:
+    payload = _build_chinese_context(prediction_context)
+    response = httpx.post(
+        f"{getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "你是银行零售营销决策支持系统的解释层。"
+                        "逻辑回归模型已经完成预测，你不得修改概率、预测类别、优先级、渠道或产品建议。"
+                        "不得编造收入、资产、交易流水、家庭情况等未提供信息。"
+                        "请输出中文 JSON，字段必须为 customer_profile、marketing_strategy、risk_note、marketing_script。"
+                        "内容要根据客户特征差异化，不要只复述字段。话术合规、克制，不承诺收益。"
+                    ),
+                },
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+            ],
+            "temperature": 0.45,
+            "response_format": {"type": "json_object"},
+        },
+        timeout=float(getenv("DEEPSEEK_TIMEOUT_SECONDS", "30")),
+    )
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"]
+    parsed = json.loads(content)
+    return {
+        "customer_profile": str(parsed["customer_profile"]),
+        "marketing_strategy": str(parsed["marketing_strategy"]),
+        "risk_note": str(parsed["risk_note"]),
+        "marketing_script": str(parsed["marketing_script"]),
+    }
+
+
+def _build_chinese_context(prediction_context: dict[str, Any]) -> dict[str, Any]:
+    features = prediction_context["features"]
+    translated_features = {
+        "年龄": features.get("age"),
+        "职业": _feature_text(features, "job"),
+        "婚姻": _feature_text(features, "marital"),
+        "教育": _feature_text(features, "education"),
+        "违约": _feature_text(features, "default"),
+        "住房贷款": _feature_text(features, "housing"),
+        "个人贷款": _feature_text(features, "loan"),
+        "联系渠道": _feature_text(features, "contact"),
+        "联系月份": _feature_text(features, "month"),
+        "本轮联系次数": features.get("campaign"),
+        "距上次联系天数": features.get("pdays"),
+        "历史联系次数": features.get("previous"),
+        "历史营销结果": _feature_text(features, "poutcome"),
+    }
+    return {
+        "customer_id": prediction_context.get("customer_id"),
+        "features": translated_features,
+        "model_result": prediction_context["model_result"],
+        "explanation_context": prediction_context["explanation_context"],
     }

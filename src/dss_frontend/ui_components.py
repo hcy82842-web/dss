@@ -48,6 +48,46 @@ def render_report_card(title: str, body: str) -> None:
     )
 
 
+def render_static_table(rows: list[dict[str, object]], columns: list[str]) -> None:
+    head = "".join(f"<th>{escape(column)}</th>" for column in columns)
+    body_rows = []
+    for row in rows:
+        cells = "".join(f"<td>{escape(str(row.get(column, '')))}</td>" for column in columns)
+        body_rows.append(f"<tr>{cells}</tr>")
+    st.markdown(
+        (
+            "<div class='static-table-wrap'>"
+            "<table class='static-table'>"
+            f"<thead><tr>{head}</tr></thead>"
+            f"<tbody>{''.join(body_rows)}</tbody>"
+            "</table>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_variable_cards(rows: list[dict[str, str]]) -> None:
+    cards = []
+    for row in rows:
+        included = str(row["是否进入模型"]) == "是"
+        badge = "进入模型" if included else "不进入模型"
+        badge_class = "included" if included else "excluded"
+        cards.append(
+            (
+                "<div class='variable-card'>"
+                "<div class='variable-card-head'>"
+                f"<span class='variable-name'>{escape(row['英文变量'])}</span>"
+                f"<span class='variable-badge {badge_class}'>{escape(badge)}</span>"
+                "</div>"
+                f"<div class='variable-cn'>{escape(row['中文含义'])}</div>"
+                f"<div class='variable-desc'>{escape(row['说明'])}</div>"
+                "</div>"
+            )
+        )
+    st.markdown(f"<div class='variable-grid'>{''.join(cards)}</div>", unsafe_allow_html=True)
+
+
 def render_decision_cards(cards: list[dict[str, str]]) -> None:
     html = ["<div class='decision-grid'>"]
     for card in cards:

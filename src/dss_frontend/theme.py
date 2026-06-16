@@ -110,6 +110,11 @@ def apply_theme() -> None:
             border-color: var(--blue);
         }
 
+        div[data-baseweb="tab-highlight"] {
+            background-color: var(--blue) !important;
+            height: 2px !important;
+        }
+
         .metric-card,
         .report-card,
         .decision-card,
@@ -199,6 +204,104 @@ def apply_theme() -> None:
             gap: 0.4rem;
         }
 
+        .variable-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .variable-card {
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 0.85rem;
+            min-height: 142px;
+        }
+
+        .variable-card-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .variable-name {
+            color: var(--title) !important;
+            font-family: Consolas, "Microsoft YaHei", sans-serif;
+            font-weight: 700;
+            font-size: 0.92rem;
+        }
+
+        .variable-badge {
+            border-radius: 999px;
+            padding: 0.16rem 0.48rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .variable-badge.included {
+            background: var(--blue-soft);
+            color: var(--blue);
+        }
+
+        .variable-badge.excluded {
+            background: #f3f4f6;
+            color: var(--muted);
+        }
+
+        .variable-cn {
+            color: var(--title);
+            font-weight: 700;
+            margin-bottom: 0.35rem;
+        }
+
+        .variable-desc {
+            color: var(--muted);
+            font-size: 0.82rem;
+            line-height: 1.62;
+        }
+
+        .static-table-wrap {
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            overflow: visible;
+            margin-bottom: 0.85rem;
+        }
+
+        .static-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 0.86rem;
+        }
+
+        .static-table th {
+            color: var(--muted);
+            background: #f9fafb;
+            font-weight: 700;
+            text-align: left;
+            padding: 0.72rem;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .static-table td {
+            color: var(--body);
+            padding: 0.72rem;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: top;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+        .static-table tr:last-child td {
+            border-bottom: none;
+        }
+
         .status-ok {
             border-left: 4px solid var(--green);
         }
@@ -266,6 +369,10 @@ def apply_theme() -> None:
             .decision-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+
+            .variable-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
         @media (max-width: 900px) {
@@ -274,6 +381,10 @@ def apply_theme() -> None:
             }
 
             .decision-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .variable-grid {
                 grid-template-columns: 1fr;
             }
         }

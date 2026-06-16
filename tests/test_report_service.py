@@ -10,13 +10,18 @@ if str(ROOT) not in sys.path:
 from src.dss_frontend.llm_cards import build_structured_llm_sections
 from src.dss_frontend.report_service import (
     build_case_options,
+    build_case_option_label,
     build_confusion_matrix_business_rows,
+    build_feature_display_rows,
     build_metric_cards,
     build_prediction_context_from_validation,
     build_prediction_error_type,
     build_priority_distribution,
+    build_priority_rule_rows,
     build_probability_distribution,
+    build_variable_reference_rows,
     build_validation_result_summary,
+    translate_field_value,
 )
 
 
@@ -156,3 +161,71 @@ def test_metric_cards_confusion_rows_and_error_type_are_explainable():
     assert build_prediction_error_type("no", "yes").startswith("假阳性")
     assert build_prediction_error_type("yes", "no").startswith("假阴性")
     assert build_prediction_error_type("yes", "yes") == "预测正确"
+
+
+def test_variable_reference_priority_rules_and_translations_are_report_ready():
+    variables = build_variable_reference_rows()
+    rules = build_priority_rule_rows()
+
+    duration = next(row for row in variables if row["英文变量"] == "duration")
+    age = next(row for row in variables if row["英文变量"] == "age")
+
+    assert age["中文含义"] == "年龄"
+    assert age["是否进入模型"] == "是"
+    assert duration["中文含义"] == "通话时长"
+    assert duration["是否进入模型"] == "否"
+    assert "不参与" in duration["说明"]
+    assert rules[0]["概率区间"] == ">= 70%"
+    assert rules[1]["客户分类"] == "中价值客户"
+    assert translate_field_value("job", "management") == "管理人员"
+    assert translate_field_value("month", "jun") == "6月"
+
+
+def test_case_option_label_does_not_leak_prediction_result():
+    row = pd.Series(
+        {
+            "customer_id": 1001,
+            "job": "management",
+            "month": "jun",
+            "contact": "cellular",
+            "actual_label": "yes",
+            "predicted_label": "no",
+            "conversion_probability": 0.88,
+        }
+    )
+
+    label = build_case_option_label(row)
+
+    assert "客户 1001" in label
+    assert "管理人员" in label
+    assert "6月" in label
+    assert "yes" not in label
+    assert "no" not in label
+    assert "0.88" not in label
+
+
+def test_feature_display_rows_translate_customer_values():
+    rows = build_feature_display_rows(
+        {
+            "age": 41,
+            "job": "management",
+            "marital": "married",
+            "education": "university.degree",
+            "default": "no",
+            "housing": "yes",
+            "loan": "no",
+            "contact": "cellular",
+            "month": "jun",
+            "duration": 220,
+            "campaign": 1,
+            "pdays": 999,
+            "previous": 1,
+            "poutcome": "success",
+        }
+    )
+
+    lookup = {row["英文变量"]: row["取值"] for row in rows}
+    assert lookup["job"] == "管理人员"
+    assert lookup["marital"] == "已婚"
+    assert lookup["housing"] == "有住房贷款"
+    assert lookup["contact"] == "手机联系"

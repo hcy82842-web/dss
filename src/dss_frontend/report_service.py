@@ -10,7 +10,7 @@ from src.dss_backend.decision_policy import build_decision_from_probability
 from src.dss_backend.ml.inference import ModelBundle, predict_probability_for_customer
 
 from .data_loader import build_missing_field_notice, build_manual_scoring_row, load_customer_frame
-from .schema import BUSINESS_INPUT_COLUMNS, MODEL_FEATURE_COLUMNS
+from .schema import BUSINESS_INPUT_COLUMNS, DISPLAY_LABELS, FIELD_DESCRIPTIONS, MODEL_FEATURE_COLUMNS, VALUE_LABELS
 
 
 METRIC_EXPLANATIONS = {
@@ -61,6 +61,58 @@ def build_case_options(validation_frame: pd.DataFrame, representative_cases: dic
         if customer_id not in ordered_ids:
             ordered_ids.append(customer_id)
     return ordered_ids
+
+
+def build_case_option_label(row: pd.Series) -> str:
+    return (
+        f"客户 {int(row['customer_id'])} | "
+        f"{translate_field_value('job', row.get('job'))} | "
+        f"{translate_field_value('month', row.get('month'))} | "
+        f"{translate_field_value('contact', row.get('contact'))}"
+    )
+
+
+def build_variable_reference_rows() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for column in BUSINESS_INPUT_COLUMNS + ["y"]:
+        rows.append(
+            {
+                "英文变量": column,
+                "中文含义": DISPLAY_LABELS.get(column, column),
+                "是否进入模型": "是" if column in MODEL_FEATURE_COLUMNS else "否",
+                "说明": FIELD_DESCRIPTIONS.get(column, ""),
+            }
+        )
+    return rows
+
+
+def build_priority_rule_rows() -> list[dict[str, str]]:
+    return [
+        {"概率区间": ">= 70%", "客户分类": "高价值客户", "决策含义": "优先电话触达，适合投入较高营销资源。"},
+        {"概率区间": "40% - 70%", "客户分类": "中价值客户", "决策含义": "先短信触达，再按反馈决定是否跟进。"},
+        {"概率区间": "< 40%", "客户分类": "低响应客户", "决策含义": "不优先电话营销，适合低成本渠道观察。"},
+    ]
+
+
+def translate_field_value(field: str, value: Any) -> str:
+    if value is None:
+        return "未知"
+    text = str(value)
+    return VALUE_LABELS.get(field, {}).get(text, text)
+
+
+def build_feature_display_rows(features: dict[str, Any]) -> list[dict[str, str]]:
+    rows = []
+    for key in BUSINESS_INPUT_COLUMNS:
+        value = features.get(key)
+        rows.append(
+            {
+                "字段": DISPLAY_LABELS.get(key, key),
+                "英文变量": key,
+                "取值": translate_field_value(key, value),
+            }
+        )
+    return rows
 
 
 def build_prediction_context_from_validation(row: pd.Series, feature_influences: list[dict[str, Any]]) -> dict[str, Any]:
