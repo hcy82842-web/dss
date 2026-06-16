@@ -13,6 +13,9 @@ from ..schemas import (
     ScoringResultRead,
 )
 
+FRONTEND_URL = "http://127.0.0.1:8501"
+HEALTH_URL = "http://127.0.0.1:8000/api/health"
+
 
 def create_router(customer_service_factory, scoring_service_factory) -> APIRouter:
     router = APIRouter(prefix="/api")
@@ -65,5 +68,19 @@ def create_router(customer_service_factory, scoring_service_factory) -> APIRoute
         if result is None:
             raise HTTPException(status_code=404, detail="scoring result not found")
         return result
+
+    return router
+
+
+def create_root_router() -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/")
+    def root() -> dict[str, str]:
+        return {
+            "message": "银行零售智能营销 DSS 后端已启动。请打开前端工作台使用系统。",
+            "frontend_url": FRONTEND_URL,
+            "health_url": HEALTH_URL,
+        }
 
     return router

@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from sqlalchemy.orm import Session
 
-from .api.routes import create_router
+from .api.routes import create_root_router, create_router
 from .config import BackendSettings
 from .db import Base, build_engine_and_session_factory
 from .integrations.deepseek_client import DeepSeekClient
@@ -44,6 +44,7 @@ def create_app(
         session: Session = app.state.session_factory()
         return _SessionBoundScoringService(session, app.state.model_service, app.state.llm_client)
 
+    app.include_router(create_root_router())
     app.include_router(create_router(customer_service_factory, scoring_service_factory))
     return app
 

@@ -111,3 +111,26 @@ def test_health_endpoint_reports_ok(tmp_path: Path):
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_root_endpoint_guides_user_to_frontend(tmp_path: Path):
+    client = TestClient(
+        create_app(
+            settings=BackendSettings(
+                database_url=f"sqlite:///{tmp_path / 'root.db'}",
+                model_artifact_path=str(tmp_path / "unused.joblib"),
+                model_metadata_path=str(tmp_path / "unused.json"),
+                deepseek_api_key="test-key",
+            ),
+            model_service=StubModelService(),
+            llm_client=FailingLlmClient(),
+        )
+    )
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "后端已启动" in payload["message"]
+    assert payload["frontend_url"] == "http://127.0.0.1:8501"
+    assert payload["health_url"] == "http://127.0.0.1:8000/api/health"
