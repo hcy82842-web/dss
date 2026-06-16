@@ -24,6 +24,15 @@ from src.dss_frontend.report_service import (
 )
 from src.dss_frontend.schema import BUSINESS_INPUT_COLUMNS, MODEL_FEATURE_COLUMNS
 from src.dss_frontend.theme import apply_theme
+from src.dss_frontend.ui_components import (
+    render_decision_cards,
+    render_llm_card,
+    render_metric_card,
+    render_metric_cards,
+    render_report_card,
+    render_section_title,
+    render_status_card,
+)
 
 DATA_PATH = Path("data/bank-additional-full.csv")
 MODEL_ARTIFACT_PATH = Path("artifacts/logistic_regression.joblib")
@@ -127,24 +136,30 @@ def _render_dataset_tab(summary: dict) -> None:
     dataset = get_dataset_summary()
     split = dataset["split"]
     distribution = dataset["target_distribution"]
-    col1, col2, col3, col4 = st.columns(4, gap="medium")
-    col1.metric("数据集来源", "UCI Bank Marketing")
-    col2.metric("总样本量", f"{dataset['sample_count']:,}")
-    col3.metric("训练集", f"{split['train_size']:,}")
-    col4.metric("验证/预测集", f"{split['validation_size']:,}")
+    render_metric_cards(
+        [
+            {"label": "数据集来源", "value": "UCI", "explanation": "Bank Marketing 真实银行营销数据"},
+            {"label": "总样本量", "value": f"{dataset['sample_count']:,}", "explanation": "用于训练与验证的历史营销记录"},
+            {"label": "训练集", "value": f"{split['train_size']:,}", "explanation": "70% 分层抽样，用于训练模型"},
+            {"label": "验证/预测集", "value": f"{split['validation_size']:,}", "explanation": "30% 分层抽样，用于评估与案例验证"},
+        ]
+    )
 
     left, right = st.columns([1.1, 1], gap="large")
     with left:
-        st.subheader("建模边界")
-        st.write(
-            "系统使用 70%/30% 分层抽样划分训练集和验证集，保持购买/未购买比例一致。"
-            "逻辑回归只在训练集上训练，验证集用于模型评估和前端案例验证。"
+        render_section_title("建模边界", "DATA SPLIT")
+        render_report_card(
+            "训练与验证划分",
+            "系统使用 70%/30% 随机分层抽样划分训练集和验证集，保持购买/未购买比例一致。"
+            "逻辑回归只在训练集上训练，验证集用于模型评估和前端案例验证。",
         )
-        st.write("模型输入特征：")
+        render_report_card(
+            "duration 字段处理",
+            "duration 是通话发生后才知道的结果变量，因此只用于历史复盘展示，不参与营销前客户筛选预测。",
+        )
         st.code(" / ".join(MODEL_FEATURE_COLUMNS), language="text")
-        st.info("`duration` 是通话发生后才知道的结果变量，因此只用于历史复盘展示，不参与前置预测。")
     with right:
-        st.subheader("目标变量分布")
+        render_section_title("目标变量分布", "TARGET")
         fig = go.Figure(
             data=[
                 go.Bar(
@@ -163,24 +178,26 @@ def _render_metrics_tab(summary: dict) -> None:
     validation_frame = get_validation_predictions()
     validation_summary = build_validation_result_summary(validation_frame)
 
-    st.subheader("模型效果指标")
+    render_section_title("模型效果指标", "MODEL METRICS")
     metric_cards = build_metric_cards(metrics)
-    metric_columns = st.columns(5, gap="medium")
-    for column, card in zip(metric_columns, metric_cards):
-        column.metric(card["label"], card["value"])
-        column.caption(card["explanation"])
+    render_metric_cards(metric_cards)
 
-    st.subheader("验证集预测摘要")
+    render_section_title("验证集预测摘要", "VALIDATION SUMMARY")
     col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
-    col1.metric("验证集客户数", f"{validation_summary['total']:,}")
-    col2.metric("预测正确", f"{validation_summary['correct']:,}")
-    col3.metric("预测错误", f"{validation_summary['incorrect']:,}")
-    col4.metric("真实购买客户", f"{validation_summary['actual_yes']:,}")
-    col5.metric("预测购买客户", f"{validation_summary['predicted_yes']:,}")
+    with col1:
+        render_metric_card("验证集客户数", f"{validation_summary['total']:,}", "用于评估模型效果的样本数")
+    with col2:
+        render_metric_card("预测正确", f"{validation_summary['correct']:,}", "真实标签与预测标签一致")
+    with col3:
+        render_metric_card("预测错误", f"{validation_summary['incorrect']:,}", "需要在报告中说明局限")
+    with col4:
+        render_metric_card("真实购买客户", f"{validation_summary['actual_yes']:,}", "验证集中实际购买定期存款")
+    with col5:
+        render_metric_card("预测购买客户", f"{validation_summary['predicted_yes']:,}", "模型建议优先营销的人群")
 
     left, right = st.columns([0.95, 1.05], gap="large")
     with left:
-        st.subheader("混淆矩阵")
+        render_section_title("混淆矩阵", "CONFUSION MATRIX")
         matrix = metrics["confusion_matrix"]["values"]
         fig = go.Figure(
             data=go.Heatmap(
@@ -197,7 +214,7 @@ def _render_metrics_tab(summary: dict) -> None:
         business_rows = pd.DataFrame(build_confusion_matrix_business_rows(metrics))
         st.dataframe(business_rows, hide_index=True, use_container_width=True)
     with right:
-        st.subheader("主要影响因素")
+        render_section_title("主要影响因素", "FEATURE EFFECTS")
         influence_frame = pd.DataFrame(summary["feature_influences"])
         st.dataframe(
             influence_frame.rename(
@@ -206,11 +223,11 @@ def _render_metrics_tab(summary: dict) -> None:
             hide_index=True,
             use_container_width=True,
         )
-        st.caption("系数方向用于辅助解释模型，不等同于因果关系。")
+        render_report_card("解释边界", "系数方向用于辅助解释模型，不等同于因果关系。")
 
     left, right = st.columns([1.05, 0.95], gap="large")
     with left:
-        st.subheader("预测概率分布")
+        render_section_title("预测概率分布", "PROBABILITY")
         probability_frame = build_probability_distribution(validation_frame)
         fig = go.Figure()
         for label, color in [("未购买 no", "#93c5fd"), ("购买 yes", "#2563eb")]:
@@ -233,9 +250,9 @@ def _render_metrics_tab(summary: dict) -> None:
             legend_title="真实标签",
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.caption("如果真实购买客户更多集中在高概率区间，说明模型具有一定客户排序能力。")
+        render_report_card("图表解读", "如果真实购买客户更多集中在高概率区间，说明模型具有一定客户排序能力。")
     with right:
-        st.subheader("营销优先级分布")
+        render_section_title("营销优先级分布", "PRIORITY")
         priority_frame = build_priority_distribution(validation_frame)
         fig = go.Figure(
             data=[
@@ -262,7 +279,7 @@ def _render_metrics_tab(summary: dict) -> None:
 
 
 def _render_prediction_tab(validation_frame: pd.DataFrame, summary: dict, bundle) -> dict:
-    st.subheader("选择验证集样本或手动输入客户")
+    render_section_title("选择验证集样本或手动输入客户", "CASE VALIDATION")
     mode = st.radio(
         "验证方式",
         ["验证集样本", "手动输入客户"],
@@ -342,27 +359,33 @@ def _build_manual_case_context(bundle) -> dict:
 def _render_prediction_result(context: dict) -> None:
     result = context["model_result"]
     features = context["features"]
-    col1, col2, col3, col4 = st.columns(4, gap="medium")
-    col1.metric("预测购买概率", f"{result['conversion_probability'] * 100:.1f}%")
-    col2.metric("预测类别", result["predicted_label"])
-    col3.metric("营销优先级", result["priority_level"])
-    col4.metric("推荐渠道", result["recommended_channel"])
+    render_decision_cards(
+        [
+            {
+                "label": "预测购买概率",
+                "value": f"{result['conversion_probability'] * 100:.1f}%",
+                "note": "逻辑回归模型输出",
+            },
+            {"label": "预测类别", "value": result["predicted_label"], "note": "阈值 0.5 转换"},
+            {"label": "营销优先级", "value": result["priority_level"], "note": "用于资源分配"},
+            {"label": "推荐渠道", "value": result["recommended_channel"], "note": "基于概率规则生成"},
+        ]
+    )
 
     left, right = st.columns([1, 1], gap="large")
     with left:
-        st.subheader("客户特征")
+        render_section_title("客户特征", "FEATURES")
         feature_frame = pd.DataFrame(
             [{"字段": key, "取值": value} for key, value in features.items() if key in BUSINESS_INPUT_COLUMNS]
         )
         st.dataframe(feature_frame, hide_index=True, use_container_width=True)
     with right:
-        st.subheader("验证结果")
+        render_section_title("验证结果", "RESULT")
         if result.get("actual_label") is None:
-            st.info("该客户来自手动输入，没有真实标签。")
+            render_status_card("手动输入客户", "该客户来自手动输入，没有真实标签。", ok=True)
         else:
             status_text = "预测正确" if result["is_correct"] else "预测错误"
-            status_method = st.success if result["is_correct"] else st.warning
-            status_method(f"{status_text}：{result['error_type']}")
+            render_status_card(status_text, result["error_type"], ok=bool(result["is_correct"]))
             validation_rows = pd.DataFrame(
                 [
                     {"项目": "真实标签", "结果": result["actual_label"]},
@@ -372,8 +395,7 @@ def _render_prediction_result(context: dict) -> None:
                 ]
             )
             st.dataframe(validation_rows, hide_index=True, use_container_width=True)
-        st.write(f"推荐产品：`{result['product_name']}`")
-        st.write(result["recommended_action"])
+        render_report_card("推荐动作", f"{result['product_name']}。{result['recommended_action']}")
 
 
 def _render_llm_tab(context: dict) -> None:
@@ -384,16 +406,20 @@ def _render_llm_tab(context: dict) -> None:
         return
 
     sections = build_structured_llm_sections(context)
-    st.info("LLM 解释基于模型输出和客户字段生成，不参与购买概率预测，也不改变营销优先级。")
+    render_status_card(
+        "LLM 解释边界",
+        "LLM 解释基于模型输出和客户字段生成，不参与购买概率预测，也不改变营销优先级。",
+        ok=True,
+    )
     col1, col2, col3 = st.columns(3, gap="medium")
-    col1.markdown("#### 客户画像")
-    col1.write(sections["customer_profile"])
-    col2.markdown("#### 营销建议")
-    col2.write(sections["marketing_strategy"])
-    col3.markdown("#### 风险与注意事项")
-    col3.write(sections["risk_note"])
-    st.markdown("#### 推荐话术")
-    st.success(sections["marketing_script"])
+    with col1:
+        render_llm_card("客户画像", sections["customer_profile"])
+    with col2:
+        render_llm_card("营销建议", sections["marketing_strategy"])
+    with col3:
+        render_llm_card("风险与注意事项", sections["risk_note"])
+    render_section_title("推荐话术", "SCRIPT")
+    render_report_card("客户沟通话术", sections["marketing_script"])
 
 
 if __name__ == "__main__":

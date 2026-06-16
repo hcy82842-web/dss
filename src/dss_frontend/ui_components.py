@@ -8,6 +8,87 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 
+def render_section_title(title: str, kicker: str | None = None) -> None:
+    kicker_html = f"<div class='section-kicker'>{escape(kicker)}</div>" if kicker else ""
+    st.markdown(
+        f"{kicker_html}<div class='report-section-title'>{escape(title)}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_metric_card(label: str, value: str, note: str = "") -> None:
+    st.markdown(
+        (
+            "<div class='metric-card'>"
+            f"<div class='metric-label'>{escape(label)}</div>"
+            f"<div class='metric-value'>{escape(value)}</div>"
+            f"<div class='metric-note'>{escape(note)}</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_metric_cards(cards: list[dict[str, str]]) -> None:
+    columns = st.columns(len(cards), gap="medium")
+    for column, card in zip(columns, cards):
+        with column:
+            render_metric_card(card["label"], card["value"], card.get("explanation", ""))
+
+
+def render_report_card(title: str, body: str) -> None:
+    st.markdown(
+        (
+            "<div class='report-card'>"
+            f"<div class='report-card-title'>{escape(title)}</div>"
+            f"<div class='report-card-body'>{escape(body)}</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_decision_cards(cards: list[dict[str, str]]) -> None:
+    html = ["<div class='decision-grid'>"]
+    for card in cards:
+        html.append(
+            (
+                "<div class='decision-card'>"
+                f"<div class='metric-label'>{escape(card['label'])}</div>"
+                f"<div class='metric-value'>{escape(card['value'])}</div>"
+                f"<div class='metric-note'>{escape(card.get('note', ''))}</div>"
+                "</div>"
+            )
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def render_status_card(title: str, body: str, ok: bool = True) -> None:
+    status_class = "status-ok" if ok else "status-warn"
+    st.markdown(
+        (
+            f"<div class='status-card {status_class}'>"
+            f"<div class='status-card-title'>{escape(title)}</div>"
+            f"<div class='status-card-body'>{escape(body)}</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_llm_card(title: str, body: str) -> None:
+    st.markdown(
+        (
+            "<div class='llm-card'>"
+            f"<div class='llm-card-title'>{escape(title)}</div>"
+            f"<div class='llm-card-body'>{escape(body)}</div>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def build_filter_summary_items(
     selected_priority_levels: list[str],
     selected_jobs: list[str],
