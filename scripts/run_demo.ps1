@@ -39,6 +39,28 @@ function Test-PortAvailable {
     return (Get-PortListeners -Port $Port).Count -eq 0
 }
 
+function Test-ProcessExists {
+    param([int]$ProcessId)
+    return $null -ne (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
+}
+
+function Test-PortHasOnlyStaleListeners {
+    param([int]$Port)
+
+    $listeners = Get-PortListeners -Port $Port
+    if ($listeners.Count -eq 0) {
+        return $false
+    }
+
+    foreach ($listener in $listeners) {
+        if (Test-ProcessExists -ProcessId $listener.OwningProcess) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Format-PortOwner {
     param($Connection)
 
@@ -56,6 +78,33 @@ function Format-PortOwner {
         $text += "`n  路径: $path"
     }
     return $text
+}
+
+function Resolve-BackendPort {
+    $preferredPort = 8000
+
+    if (Test-PortAvailable -Port $preferredPort) {
+        Write-Log "FastAPI backend port $preferredPort is available"
+        return $preferredPort
+    }
+
+    if (-not (Test-PortHasOnlyStaleListeners -Port $preferredPort)) {
+        Assert-PortAvailable -Port $preferredPort -ServiceName "FastAPI 后端"
+    }
+
+    Write-Host "检测到 8000 端口被不存在的旧 PID 占用，疑似 Windows 端口状态残留。" -ForegroundColor Yellow
+    Write-Host "本次将自动使用备用后端端口。" -ForegroundColor Yellow
+    Write-Log "FastAPI backend port 8000 has stale listeners; selecting fallback port"
+
+    foreach ($port in 8001..8010) {
+        if (Test-PortAvailable -Port $port) {
+            Write-Host "已选择备用后端端口：$port" -ForegroundColor Green
+            Write-Log "Selected fallback backend port $port"
+            return $port
+        }
+    }
+
+    Fail-Friendly "8000 端口存在无效 PID 占用，且 8001-8010 没有可用备用端口。建议重启 Windows 后重新运行 run_demo.bat。"
 }
 
 function Assert-PortAvailable {
@@ -212,18 +261,19 @@ function Invoke-Main {
     }
 
     Write-Step "检查演示端口"
-    Assert-PortAvailable -Port 8000 -ServiceName "FastAPI 后端"
+    $BackendPort = Resolve-BackendPort
     Assert-PortAvailable -Port 8501 -ServiceName "Streamlit 前端"
 
     Write-Step "启动 FastAPI 后端"
-    $BackendCommand = "cd /d `"$ProjectRoot`" && `"$VenvPython`" -m uvicorn src.dss_backend.main:create_default_app --factory --reload --host 127.0.0.1 --port 8000"
+    $BackendCommand = "cd /d `"$ProjectRoot`" && `"$VenvPython`" -m uvicorn src.dss_backend.main:create_default_app --factory --reload --host 127.0.0.1 --port $BackendPort"
     Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $BackendCommand -WindowStyle Normal
 
     Write-Step "等待后端健康检查"
-    if (-not (Wait-HttpOk -Url "http://127.0.0.1:8000/api/health" -TimeoutSeconds 20)) {
+    $BackendHealthUrl = "http://127.0.0.1:$BackendPort/api/health"
+    if (-not (Wait-HttpOk -Url $BackendHealthUrl -TimeoutSeconds 20)) {
         Fail-Friendly "后端未能在 20 秒内通过健康检查。请查看 FastAPI 命令行窗口中的错误信息。"
     }
-    Write-Host "后端已就绪：http://127.0.0.1:8000/api/health" -ForegroundColor Green
+    Write-Host "后端已就绪：$BackendHealthUrl" -ForegroundColor Green
 
     Write-Step "启动 Streamlit 前端"
     $FrontendCommand = "cd /d `"$ProjectRoot`" && `"$VenvPython`" -m streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.gatherUsageStats false"
@@ -241,8 +291,8 @@ function Invoke-Main {
     Write-Host ""
     Write-Host "演示服务已启动：" -ForegroundColor Green
     Write-Host "请使用前端工作台：http://127.0.0.1:8501"
-    Write-Host "后端 API 仅用于健康检查和接口调用：http://127.0.0.1:8000/api/health"
-    Write-Host "如果误打开 http://127.0.0.1:8000/，会看到后端提示信息，不是主页面。"
+    Write-Host "后端 API 仅用于健康检查和接口调用：$BackendHealthUrl"
+    Write-Host "如果误打开后端根路径，会看到后端提示信息，不是主页面。"
     Write-Host ""
     Write-Host "关闭演示时，直接关闭新打开的两个命令行窗口即可。"
     Write-Log "Demo started successfully"

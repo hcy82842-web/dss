@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from ..schemas import (
     BatchScoringRequest,
@@ -14,7 +14,6 @@ from ..schemas import (
 )
 
 FRONTEND_URL = "http://127.0.0.1:8501"
-HEALTH_URL = "http://127.0.0.1:8000/api/health"
 
 
 def create_router(customer_service_factory, scoring_service_factory) -> APIRouter:
@@ -76,11 +75,12 @@ def create_root_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/")
-    def root() -> dict[str, str]:
+    def root(request: Request) -> dict[str, str]:
+        health_url = str(request.url_for("health"))
         return {
             "message": "银行零售智能营销 DSS 后端已启动。请打开前端工作台使用系统。",
             "frontend_url": FRONTEND_URL,
-            "health_url": HEALTH_URL,
+            "health_url": health_url,
         }
 
     return router

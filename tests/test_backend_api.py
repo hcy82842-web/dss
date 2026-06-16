@@ -133,4 +133,4 @@ def test_root_endpoint_guides_user_to_frontend(tmp_path: Path):
     payload = response.json()
     assert "后端已启动" in payload["message"]
     assert payload["frontend_url"] == "http://127.0.0.1:8501"
-    assert payload["health_url"] == "http://127.0.0.1:8000/api/health"
+    assert payload["health_url"].endswith("/api/health")
