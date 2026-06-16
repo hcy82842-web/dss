@@ -221,6 +221,22 @@ python -m pytest -q
 
 ## 常见问题
 
+### `run_demo.bat` 闪退或出现一堆红色报错怎么办？
+
+通常是旧的 FastAPI / Streamlit 服务还在运行，占用了演示端口 `8000` 或 `8501`。当前脚本会在失败时停住窗口，并显示占用端口的进程 PID 和进程名。
+
+可以用下面命令查看端口占用：
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000,8501 -State Listen
+```
+
+处理方式：
+
+1. 关闭旧的 FastAPI / Streamlit 命令行窗口。
+2. 重新运行 `run_demo.bat`。
+3. 如果仍失败，查看 `artifacts/run_demo.log`。
+
 ### 页面显示 `{"detail":"Not Found"}` 是不是报错？
 
 通常不是。这个现象一般是因为打开了后端地址 `http://127.0.0.1:8000/`。系统主页面是：

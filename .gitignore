@@ -19,6 +19,7 @@ env/
 .streamlit-*.log
 .streamlit-stderr.log
 .streamlit-stdout.log
+artifacts/run_demo.log
 
 artifacts/*.db
 artifacts/*.sqlite
