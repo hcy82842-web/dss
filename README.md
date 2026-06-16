@@ -121,7 +121,23 @@ python -m pip install -r requirements.txt
 
 ## 模型训练
 
-首次运行或调整特征后执行：
+Windows 环境推荐直接运行：
+
+```bash
+train_model.bat
+```
+
+该脚本会自动完成：
+
+- 检查 Python 3.10+；
+- 创建或复用 `.venv` 虚拟环境；
+- 安装 `requirements.txt` 依赖；
+- 检查 `data/bank-additional-full.csv`；
+- 清理旧运行缓存；
+- 重新训练逻辑回归模型；
+- 校验模型和验证集产物是否生成成功。
+
+如果已经激活虚拟环境，也可以手动执行：
 
 ```bash
 python scripts/train_logistic_regression.py
