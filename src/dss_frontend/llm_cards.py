@@ -139,6 +139,73 @@ def generate_llm_sections(prediction_context: dict[str, Any]) -> dict[str, Any]:
         }
 
 
+def get_llm_config_summary() -> dict[str, str]:
+    config = _resolve_llm_config()
+    return {
+        "provider_name": config["provider_name"],
+        "base_url": config["base_url"],
+        "model": config["model"],
+        "api_key_status": "已配置" if config["api_key"] else "未配置",
+    }
+
+
+def test_llm_connection() -> dict[str, Any]:
+    config = _resolve_llm_config()
+    if not config["api_key"]:
+        return {
+            "ok": False,
+            "title": "LLM API Key 未配置",
+            "message": "请在 .env 中配置 LLM_API_KEY，或使用兼容的 DEEPSEEK_API_KEY。",
+            "provider_name": config["provider_name"],
+            "base_url": config["base_url"],
+            "model": config["model"],
+        }
+
+    try:
+        response = httpx.post(
+            f"{config['base_url']}/chat/completions",
+            headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
+            json={
+                "model": config["model"],
+                "messages": [
+                    {"role": "system", "content": "你是一个连接测试助手，只回复 pong。"},
+                    {"role": "user", "content": "ping"},
+                ],
+                "temperature": 0,
+                "max_tokens": 8,
+            },
+            timeout=float(config["timeout_seconds"]),
+        )
+        response.raise_for_status()
+        return {
+            "ok": True,
+            "title": f"{config['provider_name']} 连接成功",
+            "message": "接口已通过基础鉴权和 chat/completions 调用测试。",
+            "provider_name": config["provider_name"],
+            "base_url": config["base_url"],
+            "model": config["model"],
+        }
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        return {
+            "ok": False,
+            "title": f"{config['provider_name']} 连接失败",
+            "message": f"HTTP {status_code}。请检查 API Key、Base URL、模型名和账号权限。",
+            "provider_name": config["provider_name"],
+            "base_url": config["base_url"],
+            "model": config["model"],
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "title": f"{config['provider_name']} 连接失败",
+            "message": f"{type(exc).__name__}: {exc}。请检查网络、Base URL 和接口兼容性。",
+            "provider_name": config["provider_name"],
+            "base_url": config["base_url"],
+            "model": config["model"],
+        }
+
+
 def _resolve_llm_config() -> dict[str, str]:
     return {
         "provider_name": getenv("LLM_PROVIDER_NAME") or getenv("DEEPSEEK_PROVIDER_NAME") or "DeepSeek",

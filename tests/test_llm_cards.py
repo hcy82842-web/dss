@@ -5,7 +5,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.dss_frontend.llm_cards import build_customer_explanation, build_customer_script, generate_llm_sections
+import httpx
+
+from src.dss_frontend.llm_cards import (
+    build_customer_explanation,
+    build_customer_script,
+    generate_llm_sections,
+    get_llm_config_summary,
+    test_llm_connection as run_llm_connection_test,
+)
 
 
 def _prediction_context():
@@ -136,3 +144,81 @@ def test_generate_llm_sections_uses_generic_llm_config(monkeypatch):
     assert calls["headers"]["Authorization"] == "Bearer mimo-key"
     assert calls["json"]["model"] == "mimo-v2.5"
     assert calls["timeout"] == 12.0
+
+
+def test_llm_config_summary_does_not_expose_api_key(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER_NAME", "MiMo v2.5")
+    monkeypatch.setenv("LLM_API_KEY", "secret-key")
+    monkeypatch.setenv("LLM_BASE_URL", "https://mimo.example.com/v1/")
+    monkeypatch.setenv("LLM_MODEL", "mimo-v2.5")
+
+    summary = get_llm_config_summary()
+
+    assert summary["provider_name"] == "MiMo v2.5"
+    assert summary["base_url"] == "https://mimo.example.com/v1"
+    assert summary["model"] == "mimo-v2.5"
+    assert summary["api_key_status"] == "已配置"
+    assert "secret-key" not in str(summary)
+
+
+def test_llm_connection_reports_missing_api_key(monkeypatch):
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    result = run_llm_connection_test()
+
+    assert result["ok"] is False
+    assert "未配置" in result["title"]
+
+
+def test_llm_connection_uses_openai_compatible_endpoint(monkeypatch):
+    calls = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, headers, json, timeout):
+        calls["url"] = url
+        calls["headers"] = headers
+        calls["json"] = json
+        calls["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setenv("LLM_PROVIDER_NAME", "MiMo v2.5")
+    monkeypatch.setenv("LLM_API_KEY", "mimo-key")
+    monkeypatch.setenv("LLM_BASE_URL", "https://mimo.example.com/v1/")
+    monkeypatch.setenv("LLM_MODEL", "mimo-v2.5")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "9")
+    monkeypatch.setattr("src.dss_frontend.llm_cards.httpx.post", fake_post)
+
+    result = run_llm_connection_test()
+
+    assert result["ok"] is True
+    assert result["title"] == "MiMo v2.5 连接成功"
+    assert calls["url"] == "https://mimo.example.com/v1/chat/completions"
+    assert calls["headers"]["Authorization"] == "Bearer mimo-key"
+    assert calls["json"]["model"] == "mimo-v2.5"
+    assert calls["json"]["max_tokens"] == 8
+    assert calls["timeout"] == 9.0
+
+
+def test_llm_connection_reports_http_status(monkeypatch):
+    request = httpx.Request("POST", "https://mimo.example.com/v1/chat/completions")
+    response = httpx.Response(401, request=request)
+
+    class FakeResponse:
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("unauthorized", request=request, response=response)
+
+    monkeypatch.setenv("LLM_PROVIDER_NAME", "MiMo v2.5")
+    monkeypatch.setenv("LLM_API_KEY", "mimo-key")
+    monkeypatch.setenv("LLM_BASE_URL", "https://mimo.example.com/v1")
+    monkeypatch.setenv("LLM_MODEL", "mimo-v2.5")
+    monkeypatch.setattr("src.dss_frontend.llm_cards.httpx.post", lambda *args, **kwargs: FakeResponse())
+
+    result = run_llm_connection_test()
+
+    assert result["ok"] is False
+    assert result["title"] == "MiMo v2.5 连接失败"
+    assert "HTTP 401" in result["message"]

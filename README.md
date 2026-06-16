@@ -72,6 +72,13 @@ LLM_TIMEOUT_SECONDS=30
 
 代码会请求 `${LLM_BASE_URL}/chat/completions`。如果 MiMo 文档要求 base URL 包含 `/v1`，就在 `LLM_BASE_URL` 中填到 `/v1` 为止。旧的 `DEEPSEEK_*` 变量仍然兼容，但新配置优先使用 `LLM_*`。
 
+测试 LLM 连接：
+
+1. 填写 `.env` 后重新运行 `run_demo.bat`。
+2. 打开第 4 个 Tab `LLM画像与营销建议`。
+3. 点击 `测试 LLM 连接`。
+4. 成功只代表 API 可调用和基础鉴权通过，不代表营销建议质量一定最优。
+
 ## 环境准备
 
 项目需要 Python 3.10+。Windows 上不要直接使用系统默认 `python`，因为本机可能指向 Python 3.6。

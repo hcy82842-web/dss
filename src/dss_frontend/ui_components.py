@@ -168,6 +168,28 @@ def render_status_card(title: str, body: str, ok: bool = True) -> None:
     )
 
 
+def render_llm_config_cards(config: dict[str, str]) -> None:
+    cards = [
+        {"label": "Provider", "value": config["provider_name"], "note": "当前 LLM 服务商"},
+        {"label": "Model", "value": config["model"], "note": "当前调用模型"},
+        {"label": "API Key", "value": config["api_key_status"], "note": "页面不会显示密钥明文"},
+    ]
+    html = ["<div class='variable-summary-grid'>"]
+    for card in cards:
+        html.append(
+            (
+                "<div class='variable-summary-card'>"
+                f"<div class='variable-summary-label'>{escape(card['label'])}</div>"
+                f"<div class='variable-summary-value'>{escape(card['value'])}</div>"
+                f"<div class='variable-summary-note'>{escape(card['note'])}</div>"
+                "</div>"
+            )
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+    render_report_card("Base URL", config["base_url"])
+
+
 def render_llm_card(title: str, body: str) -> None:
     st.markdown(
         (

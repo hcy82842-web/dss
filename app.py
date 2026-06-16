@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.dss_backend.ml.inference import load_model_bundle
 from src.dss_frontend.data_loader import REQUIRED_BUSINESS_FIELDS
-from src.dss_frontend.llm_cards import generate_llm_sections
+from src.dss_frontend.llm_cards import generate_llm_sections, get_llm_config_summary, test_llm_connection
 from src.dss_frontend.report_service import (
     build_case_options,
     build_case_option_label,
@@ -31,6 +31,7 @@ from src.dss_frontend.theme import apply_theme
 from src.dss_frontend.ui_components import (
     render_decision_cards,
     render_llm_card,
+    render_llm_config_cards,
     render_metric_card,
     render_metric_cards,
     render_report_card,
@@ -110,6 +111,7 @@ def _init_session_state() -> None:
         "llm_status": None,
         "selected_customer_id": None,
         "prediction_mode": None,
+        "llm_connection_status": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -459,6 +461,19 @@ def _render_prediction_result(context: dict) -> None:
 
 
 def _render_llm_tab() -> None:
+    render_section_title("LLM连接检测", "CONNECTION")
+    render_llm_config_cards(get_llm_config_summary())
+    if st.button("测试 LLM 连接", use_container_width=True):
+        with st.spinner("正在测试 LLM 连接..."):
+            st.session_state["llm_connection_status"] = test_llm_connection()
+    connection_status = st.session_state.get("llm_connection_status")
+    if connection_status is not None:
+        render_status_card(
+            connection_status["title"],
+            connection_status["message"],
+            ok=bool(connection_status["ok"]),
+        )
+
     context = st.session_state.get("prediction_context")
     sections = st.session_state.get("llm_sections")
     llm_status = st.session_state.get("llm_status")
