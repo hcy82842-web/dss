@@ -5,8 +5,12 @@ from os import getenv
 from typing import Any
 
 import httpx
+from dotenv import load_dotenv
 
 from src.dss_frontend.report_service import translate_field_value
+
+
+load_dotenv()
 
 
 def _feature_text(features: dict[str, Any], field: str) -> str:
@@ -117,7 +121,8 @@ def build_structured_llm_sections(prediction_context: dict[str, Any]) -> dict[st
 
 
 def generate_llm_sections(prediction_context: dict[str, Any]) -> dict[str, Any]:
-    api_key = getenv("DEEPSEEK_API_KEY", "")
+    config = _resolve_llm_config()
+    api_key = config["api_key"]
     if not api_key:
         return {
             "sections": build_structured_llm_sections(prediction_context),
@@ -125,8 +130,8 @@ def generate_llm_sections(prediction_context: dict[str, Any]) -> dict[str, Any]:
         }
 
     try:
-        sections = _call_deepseek_for_sections(prediction_context, api_key)
-        return {"sections": sections, "llm_status": "DeepSeek生成成功"}
+        sections = _call_openai_compatible_llm(prediction_context, config)
+        return {"sections": sections, "llm_status": f"{config['provider_name']}生成成功"}
     except Exception:
         return {
             "sections": build_structured_llm_sections(prediction_context),
@@ -134,13 +139,23 @@ def generate_llm_sections(prediction_context: dict[str, Any]) -> dict[str, Any]:
         }
 
 
-def _call_deepseek_for_sections(prediction_context: dict[str, Any], api_key: str) -> dict[str, str]:
+def _resolve_llm_config() -> dict[str, str]:
+    return {
+        "provider_name": getenv("LLM_PROVIDER_NAME") or getenv("DEEPSEEK_PROVIDER_NAME") or "DeepSeek",
+        "api_key": getenv("LLM_API_KEY") or getenv("DEEPSEEK_API_KEY", ""),
+        "base_url": (getenv("LLM_BASE_URL") or getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")).rstrip("/"),
+        "model": getenv("LLM_MODEL") or getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+        "timeout_seconds": getenv("LLM_TIMEOUT_SECONDS") or getenv("DEEPSEEK_TIMEOUT_SECONDS", "30"),
+    }
+
+
+def _call_openai_compatible_llm(prediction_context: dict[str, Any], config: dict[str, str]) -> dict[str, str]:
     payload = _build_chinese_context(prediction_context)
     response = httpx.post(
-        f"{getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        f"{config['base_url']}/chat/completions",
+        headers={"Authorization": f"Bearer {config['api_key']}", "Content-Type": "application/json"},
         json={
-            "model": getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            "model": config["model"],
             "messages": [
                 {
                     "role": "system",
@@ -157,7 +172,7 @@ def _call_deepseek_for_sections(prediction_context: dict[str, Any], api_key: str
             "temperature": 0.45,
             "response_format": {"type": "json_object"},
         },
-        timeout=float(getenv("DEEPSEEK_TIMEOUT_SECONDS", "30")),
+        timeout=float(config["timeout_seconds"]),
     )
     response.raise_for_status()
     content = response.json()["choices"][0]["message"]["content"]

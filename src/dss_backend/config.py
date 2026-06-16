@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 
 @dataclass(slots=True)
 class BackendSettings:
@@ -23,10 +28,11 @@ class BackendSettings:
             database_url=os.getenv("DSS_DATABASE_URL", defaults.database_url),
             model_artifact_path=os.getenv("DSS_MODEL_ARTIFACT_PATH", defaults.model_artifact_path),
             model_metadata_path=os.getenv("DSS_MODEL_METADATA_PATH", defaults.model_metadata_path),
-            deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", defaults.deepseek_api_key),
-            deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", defaults.deepseek_base_url),
-            deepseek_model=os.getenv("DEEPSEEK_MODEL", defaults.deepseek_model),
+            deepseek_api_key=os.getenv("LLM_API_KEY") or os.getenv("DEEPSEEK_API_KEY", defaults.deepseek_api_key),
+            deepseek_base_url=os.getenv("LLM_BASE_URL") or os.getenv("DEEPSEEK_BASE_URL", defaults.deepseek_base_url),
+            deepseek_model=os.getenv("LLM_MODEL") or os.getenv("DEEPSEEK_MODEL", defaults.deepseek_model),
             deepseek_timeout_seconds=float(
-                os.getenv("DEEPSEEK_TIMEOUT_SECONDS", str(defaults.deepseek_timeout_seconds))
+                os.getenv("LLM_TIMEOUT_SECONDS")
+                or os.getenv("DEEPSEEK_TIMEOUT_SECONDS", str(defaults.deepseek_timeout_seconds))
             ),
         )

@@ -111,8 +111,9 @@ def apply_theme() -> None:
         }
 
         div[data-baseweb="tab-highlight"] {
-            background-color: var(--blue) !important;
-            height: 2px !important;
+            display: none !important;
+            height: 0 !important;
+            opacity: 0 !important;
         }
 
         .metric-card,
@@ -211,6 +212,46 @@ def apply_theme() -> None:
             margin-bottom: 0.85rem;
         }
 
+        .variable-summary-grid,
+        .priority-rule-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.65rem;
+            margin-bottom: 0.85rem;
+        }
+
+        .variable-summary-card,
+        .priority-rule-card {
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            padding: 0.82rem;
+            min-height: 92px;
+        }
+
+        .variable-summary-label,
+        .priority-rule-label {
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 700;
+            margin-bottom: 0.32rem;
+        }
+
+        .variable-summary-value,
+        .priority-rule-value {
+            color: var(--title);
+            font-size: 1.02rem;
+            font-weight: 700;
+            margin-bottom: 0.32rem;
+        }
+
+        .variable-summary-note,
+        .priority-rule-note {
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.55;
+        }
+
         .variable-card {
             background: #ffffff;
             border: 1px solid var(--line);
@@ -302,6 +343,18 @@ def apply_theme() -> None:
             border-bottom: none;
         }
 
+        div[data-testid="stExpander"] {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: var(--shadow);
+            margin-bottom: 0.9rem;
+        }
+
+        div[data-testid="stExpander"] details {
+            border: none;
+        }
+
         .status-ok {
             border-left: 4px solid var(--green);
         }
@@ -372,6 +425,11 @@ def apply_theme() -> None:
 
             .variable-grid {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .variable-summary-grid,
+            .priority-rule-grid {
+                grid-template-columns: 1fr;
             }
         }
 

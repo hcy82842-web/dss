@@ -88,6 +88,57 @@ def render_variable_cards(rows: list[dict[str, str]]) -> None:
     st.markdown(f"<div class='variable-grid'>{''.join(cards)}</div>", unsafe_allow_html=True)
 
 
+def render_variable_summary_cards(rows: list[dict[str, str]]) -> None:
+    included_count = sum(1 for row in rows if str(row["是否进入模型"]) == "是")
+    excluded = [row["英文变量"] for row in rows if str(row["是否进入模型"]) != "是"]
+    cards = [
+        {
+            "label": "进入模型变量",
+            "value": f"{included_count} 个",
+            "note": "用于逻辑回归前置预测",
+        },
+        {
+            "label": "不进入模型变量",
+            "value": " / ".join(excluded) if excluded else "无",
+            "note": "仅用于历史复盘或页面说明",
+        },
+        {
+            "label": "完整说明",
+            "value": "点击展开",
+            "note": "查看英文变量、中文含义和建模边界",
+        },
+    ]
+    html = ["<div class='variable-summary-grid'>"]
+    for card in cards:
+        html.append(
+            (
+                "<div class='variable-summary-card'>"
+                f"<div class='variable-summary-label'>{escape(card['label'])}</div>"
+                f"<div class='variable-summary-value'>{escape(card['value'])}</div>"
+                f"<div class='variable-summary-note'>{escape(card['note'])}</div>"
+                "</div>"
+            )
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
+def render_priority_rule_cards(rows: list[dict[str, str]]) -> None:
+    html = ["<div class='priority-rule-grid'>"]
+    for row in rows:
+        html.append(
+            (
+                "<div class='priority-rule-card'>"
+                f"<div class='priority-rule-label'>{escape(row['概率区间'])}</div>"
+                f"<div class='priority-rule-value'>{escape(row['客户分类'])}</div>"
+                f"<div class='priority-rule-note'>{escape(row['决策含义'])}</div>"
+                "</div>"
+            )
+        )
+    html.append("</div>")
+    st.markdown("".join(html), unsafe_allow_html=True)
+
+
 def render_decision_cards(cards: list[dict[str, str]]) -> None:
     html = ["<div class='decision-grid'>"]
     for card in cards:

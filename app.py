@@ -36,8 +36,9 @@ from src.dss_frontend.ui_components import (
     render_report_card,
     render_section_title,
     render_status_card,
+    render_priority_rule_cards,
     render_static_table,
-    render_variable_cards,
+    render_variable_summary_cards,
 )
 
 DATA_PATH = Path("data/bank-additional-full.csv")
@@ -178,7 +179,10 @@ def _render_dataset_tab(summary: dict) -> None:
             "duration 是通话发生后才知道的结果变量，因此只用于历史复盘展示，不参与营销前客户筛选预测。",
         )
         render_section_title("变量中英文对照", "VARIABLES")
-        render_variable_cards(build_variable_reference_rows())
+        variable_rows = build_variable_reference_rows()
+        render_variable_summary_cards(variable_rows)
+        with st.expander("查看变量中英文对照", expanded=False):
+            render_static_table(variable_rows, ["英文变量", "中文含义", "是否进入模型", "说明"])
     with right:
         render_section_title("目标变量分布", "TARGET")
         fig = go.Figure(
@@ -307,7 +311,8 @@ def _render_metrics_tab(summary: dict) -> None:
             display_frame.to_dict("records"),
             ["营销优先级", "客户数", "真实购买数", "真实购买率", "平均预测概率"],
         )
-        render_static_table(build_priority_rule_rows(), ["概率区间", "客户分类", "决策含义"])
+        render_section_title("客户分组依据", "RULES")
+        render_priority_rule_cards(build_priority_rule_rows())
 
 
 def _render_prediction_tab(validation_frame: pd.DataFrame, summary: dict, bundle) -> None:
@@ -466,7 +471,7 @@ def _render_llm_tab() -> None:
     render_status_card(
         f"LLM状态：{llm_status}",
         "LLM 解释基于模型输出和客户字段生成，不参与购买概率预测，也不改变营销优先级。",
-        ok=llm_status == "DeepSeek生成成功",
+        ok=str(llm_status).endswith("生成成功"),
     )
     col1, col2, col3 = st.columns(3, gap="medium")
     with col1:

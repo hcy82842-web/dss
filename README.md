@@ -55,9 +55,22 @@ DSS_DATABASE_URL=mysql+pymysql://root:password@127.0.0.1:3306/dss_demo?charset=u
 
 ### 4. LLM 解释层
 
-- 集成位置：`src/dss_backend/integrations/deepseek_client.py`
-- 输出字段：`customer_explanation`、`marketing_script`
-- 失败策略：无 API Key 或调用失败时使用模板解释，评分不中断，并记录 `llm_status=failed_fallback`。
+- 前端集成位置：`src/dss_frontend/llm_cards.py`
+- 后端扩展位置：`src/dss_backend/integrations/deepseek_client.py`
+- 输出字段：客户画像、营销建议、风险提示、沟通话术。
+- 失败策略：无 API Key 或调用失败时使用模板解释，评分不中断。
+
+如果使用 MiMo v2.5 这类 OpenAI 兼容接口，复制 `.env.example` 为 `.env`，填写：
+
+```env
+LLM_PROVIDER_NAME=MiMo v2.5
+LLM_API_KEY=你的_MiMo_API_Key
+LLM_BASE_URL=你的_MiMo_OpenAI兼容BaseURL
+LLM_MODEL=你的_MiMo_v2.5模型名
+LLM_TIMEOUT_SECONDS=30
+```
+
+代码会请求 `${LLM_BASE_URL}/chat/completions`。如果 MiMo 文档要求 base URL 包含 `/v1`，就在 `LLM_BASE_URL` 中填到 `/v1` 为止。旧的 `DEEPSEEK_*` 变量仍然兼容，但新配置优先使用 `LLM_*`。
 
 ## 环境准备
 
@@ -170,7 +183,7 @@ python scripts/train_logistic_regression.py
 - 系统不会额外保存 `train.csv` 和 `test.csv`，验证集预测结果统一保存为 `artifacts/validation_predictions.csv`。
 - 前端 `数据集与模型概览` 和 `训练与验证结果` 读取 `artifacts/evaluation_summary.json`。
 - 前端 `客户预测验证` 读取 `artifacts/validation_predictions.csv`，也可以加载 `artifacts/logistic_regression.joblib` 对手动输入客户即时预测。
-- 前端 `LLM画像与营销建议` 基于当前客户的模型输出生成解释文本，不重新预测概率。
+- 前端 `LLM画像与营销建议` 基于当前客户的模型输出生成解释文本，不重新预测概率；配置了 `LLM_*` 后优先调用 MiMo/OpenAI 兼容接口，否则使用模板 fallback。
 
 ## 手动启动方式
 
