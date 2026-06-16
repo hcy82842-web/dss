@@ -71,6 +71,8 @@ Windows 环境推荐直接运行：
 run_demo.bat
 ```
 
+`run_demo.bat` 是 Windows CMD 启动入口，文件内容故意保持英文/ASCII，以避免 CMD 对中文批处理编码解析不稳定。详细中文诊断信息由 `scripts/run_demo.ps1` 输出。
+
 该脚本会自动完成：
 
 - 检查 Python 3.10+；
@@ -224,6 +226,8 @@ python -m pytest -q
 ### `run_demo.bat` 闪退或出现一堆红色报错怎么办？
 
 通常是旧的 FastAPI / Streamlit 服务还在运行，占用了演示端口 `8000` 或 `8501`。当前脚本会在失败时停住窗口，并显示占用端口的进程 PID 和进程名。
+
+如果看到类似 `'xxx' is not recognized as an internal or external command`，可能是旧版 `run_demo.bat` 中的中文提示被 Windows CMD 误解析。请拉取最新代码后重新运行；新版 `run_demo.bat` 已保持纯 ASCII，中文诊断统一由 PowerShell 脚本输出。
 
 可以用下面命令查看端口占用：
 
