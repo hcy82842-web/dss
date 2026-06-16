@@ -48,6 +48,14 @@ function Wait-HttpOk {
     return $false
 }
 
+function Assert-RequiredFile {
+    param([string]$Path)
+
+    if (-not (Test-Path $Path)) {
+        throw "缺少必要文件：$Path。请先运行 .\.venv\Scripts\python.exe scripts\train_logistic_regression.py"
+    }
+}
+
 function Resolve-Python {
     $candidates = @(
         @("py", "-3.11"),
@@ -96,6 +104,9 @@ Write-Step "检查 Python 运行环境"
 $Python = Resolve-Python
 Write-Host "使用 Python $($Python.Version)"
 
+Write-Step "清理旧运行缓存"
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "clean_runtime_cache.ps1")
+
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $VenvPython)) {
     Write-Step "创建虚拟环境 .venv"
@@ -113,6 +124,16 @@ if (-not (Test-Path "data\bank-additional-full.csv")) {
 if ((-not (Test-Path "artifacts\logistic_regression.joblib")) -or (-not (Test-Path "artifacts\model_metadata.json"))) {
     Write-Step "未发现模型产物，开始训练逻辑回归模型"
     & $VenvPython scripts\train_logistic_regression.py
+}
+
+Write-Step "执行启动前自检"
+Assert-RequiredFile "artifacts\logistic_regression.joblib"
+Assert-RequiredFile "artifacts\model_metadata.json"
+Assert-RequiredFile "artifacts\validation_predictions.csv"
+Assert-RequiredFile "artifacts\evaluation_summary.json"
+& $VenvPython -c "from src.dss_frontend.llm_cards import build_structured_llm_sections; import app; print('startup import self-check ok')"
+if ($LASTEXITCODE -ne 0) {
+    throw "启动前 import 自检失败。请确认已拉取最新代码，并关闭旧 Streamlit/FastAPI 窗口后重试。"
 }
 
 Write-Step "检查演示端口"

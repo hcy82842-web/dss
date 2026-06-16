@@ -136,6 +136,23 @@ python scripts/train_logistic_regression.py
 
 `model_metadata.json` 包含 AUC、Accuracy、Precision、Recall、F1、混淆矩阵、正类召回率和主要特征影响方向。`validation_predictions.csv` 保存 30% 验证集上的真实标签、预测概率、预测类别和营销优先级，供前端进行单客户案例验证。
 
+## 训练与预测链路
+
+系统运行逻辑如下：
+
+```text
+原始数据 -> 70/30 分层划分 -> 训练逻辑回归 -> 验证集评估 -> 保存模型与验证预测 -> 前端读取结果 -> LLM解释
+```
+
+具体说明：
+
+- 原始数据来自 `data/bank-additional-full.csv`。
+- 训练脚本在内存中按 `70%` 训练集、`30%` 验证集划分数据，并使用 `stratify=y` 保持购买/未购买比例一致。
+- 系统不会额外保存 `train.csv` 和 `test.csv`，验证集预测结果统一保存为 `artifacts/validation_predictions.csv`。
+- 前端 `数据集与模型概览` 和 `训练与验证结果` 读取 `artifacts/evaluation_summary.json`。
+- 前端 `客户预测验证` 读取 `artifacts/validation_predictions.csv`，也可以加载 `artifacts/logistic_regression.joblib` 对手动输入客户即时预测。
+- 前端 `LLM画像与营销建议` 基于当前客户的模型输出生成解释文本，不重新预测概率。
+
 ## 手动启动方式
 
 ### 启动前端
@@ -223,3 +240,28 @@ Local URL: http://127.0.0.1:8501
 ```bash
 run_demo.bat
 ```
+
+### 出现 `ImportError: cannot import name 'build_structured_llm_sections'` 怎么办？
+
+这通常是旧 Streamlit 进程或 Python 缓存导致的。处理方式：
+
+1. 关闭所有旧的 FastAPI / Streamlit 命令行窗口。
+2. 运行缓存清理脚本：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\clean_runtime_cache.ps1
+```
+
+3. 运行 import 自检：
+
+```powershell
+.\.venv\Scripts\python.exe -c "from src.dss_frontend.llm_cards import build_structured_llm_sections; print('ok')"
+```
+
+4. 如果输出 `ok`，重新运行：
+
+```bash
+run_demo.bat
+```
+
+当前 `run_demo.bat` 已经会自动执行缓存清理和 import 自检。若仍失败，说明本地代码不是最新版本，需要先拉取 GitHub 最新代码。
