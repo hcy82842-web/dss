@@ -63,6 +63,33 @@ DSS_DATABASE_URL=mysql+pymysql://root:password@127.0.0.1:3306/dss_demo?charset=u
 
 项目需要 Python 3.10+。Windows 上不要直接使用系统默认 `python`，因为本机可能指向 Python 3.6。
 
+## 一键运行
+
+Windows 环境推荐直接运行：
+
+```bash
+run_demo.bat
+```
+
+该脚本会自动完成：
+
+- 检查 Python 3.10+；
+- 创建 `.venv` 虚拟环境；
+- 安装 `requirements.txt` 依赖；
+- 检查数据文件；
+- 缺少模型产物时自动训练逻辑回归模型；
+- 启动 FastAPI 后端；
+- 启动 Streamlit 前端。
+
+启动完成后访问：
+
+- 前端工作台：http://127.0.0.1:8501
+- 后端健康检查：http://127.0.0.1:8000/api/health
+
+关闭演示时，关闭脚本打开的两个命令行窗口即可。
+
+## 手动环境准备
+
 推荐：
 
 ```bash
@@ -100,7 +127,7 @@ python scripts/train_logistic_regression.py
 
 `model_metadata.json` 包含 AUC、Accuracy、Precision、Recall、F1、混淆矩阵、正类召回率和主要特征影响方向。
 
-## 启动方式
+## 手动启动方式
 
 ### 启动前端
 
@@ -129,14 +156,11 @@ uvicorn src.dss_backend.main:create_default_app --factory --reload
 
 ## 演示闭环
 
-1. 准备 Python 3.10+ 虚拟环境。
-2. 放置 `data/bank-additional-full.csv`。
-3. 训练逻辑回归模型。
-4. 启动 FastAPI 后端。
-5. 导入或录入业务客户。
-6. 运行单客户或批量评分。
-7. 查看评分结果、LLM 解释和营销话术。
-8. 启动 Streamlit 工作台展示完整 DSS 流程。
+1. 放置 `data/bank-additional-full.csv`。
+2. 运行 `run_demo.bat`。
+3. 打开 Streamlit 工作台。
+4. 导入或录入业务客户。
+5. 查看模型评分、优先级、推荐渠道、LLM 解释和营销话术。
 
 ## 测试
 
