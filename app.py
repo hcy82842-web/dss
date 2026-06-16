@@ -1,389 +1,319 @@
-from io import StringIO
+from __future__ import annotations
+
 from pathlib import Path
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
-from src.dss_frontend.data_loader import (
-    REQUIRED_BUSINESS_FIELDS,
-    build_manual_scoring_row,
-    load_customer_frame,
-    load_scoring_frame,
-)
 from src.dss_backend.ml.inference import load_model_bundle
-from src.dss_frontend.decision_engine import build_decision_view, enrich_with_model_decisions
-from src.dss_frontend.schema import AGE_GROUP_LABELS, BUSINESS_INPUT_COLUMNS, PRIORITY_LEVELS
-from src.dss_frontend.service_layer import build_dashboard_state
-from src.dss_frontend.theme import apply_theme
-from src.dss_frontend.ui_components import (
-    render_candidate_snapshot_panel,
-    render_candidate_table,
-    render_customer_detail,
-    render_dashboard_header,
-    render_distribution_panel,
-    render_filter_summary,
-    render_filter_toolbar_title,
-    render_month_trend_panel,
-    render_priority_heatmap_panel,
-    render_section_banner,
-    render_summary_cards,
-    render_workflow_steps,
-    render_channel_matrix_panel,
+from src.dss_frontend.data_loader import REQUIRED_BUSINESS_FIELDS
+from src.dss_frontend.llm_cards import build_structured_llm_sections
+from src.dss_frontend.report_service import (
+    build_case_options,
+    build_dataset_summary,
+    build_prediction_context_from_manual,
+    build_prediction_context_from_validation,
+    load_evaluation_summary,
+    load_validation_predictions,
 )
+from src.dss_frontend.schema import BUSINESS_INPUT_COLUMNS, MODEL_FEATURE_COLUMNS
+from src.dss_frontend.theme import apply_theme
 
-DATA_CANDIDATES = [
-    Path("data/bank-additional-full.csv"),
-    Path("C:/Users/郏天宇/Desktop/bank-additional-full.csv"),
-]
+DATA_PATH = Path("data/bank-additional-full.csv")
 MODEL_ARTIFACT_PATH = Path("artifacts/logistic_regression.joblib")
 MODEL_METADATA_PATH = Path("artifacts/model_metadata.json")
-
-
-def resolve_data_path() -> Path:
-    for candidate in DATA_CANDIDATES:
-        if candidate.exists():
-            return candidate
-    raise FileNotFoundError("Cannot find bank-additional-full.csv")
+VALIDATION_PREDICTIONS_PATH = Path("artifacts/validation_predictions.csv")
+EVALUATION_SUMMARY_PATH = Path("artifacts/evaluation_summary.json")
 
 
 @st.cache_resource(show_spinner=False)
-def build_model_bundle():
+def get_model_bundle():
     return load_model_bundle(MODEL_ARTIFACT_PATH, MODEL_METADATA_PATH)
 
 
-def enrich_decision_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    try:
-        bundle = build_model_bundle()
-        return enrich_with_model_decisions(frame, bundle)
-    except Exception as exc:
-        st.session_state["model_fallback_warning"] = str(exc)
-        decisions = frame.apply(build_decision_view, axis=1, result_type="expand")
-        return frame.join(decisions.drop(columns=["customer_label"]))
+@st.cache_data(show_spinner=False)
+def get_evaluation_summary() -> dict:
+    return load_evaluation_summary(EVALUATION_SUMMARY_PATH)
 
 
 @st.cache_data(show_spinner=False)
-def build_training_frame() -> pd.DataFrame:
-    frame = load_customer_frame(resolve_data_path())
-    return enrich_decision_frame(frame)
+def get_validation_predictions() -> pd.DataFrame:
+    return load_validation_predictions(VALIDATION_PREDICTIONS_PATH)
 
 
 @st.cache_data(show_spinner=False)
-def build_scoring_frame(csv_text: str) -> pd.DataFrame:
-    csv_buffer = StringIO(csv_text)
-    frame = load_scoring_frame(csv_buffer)
-    return enrich_decision_frame(frame)
-
-
-def build_default_scoring_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "age": 41,
-                "job": "management",
-                "marital": "married",
-                "education": "university.degree",
-                "default": "no",
-                "housing": "yes",
-                "loan": "no",
-                "contact": "cellular",
-                "month": "jun",
-                "duration": 220,
-                "campaign": 1,
-                "pdays": 999,
-                "previous": 1,
-                "poutcome": "success",
-            },
-            {
-                "age": 34,
-                "job": "technician",
-                "marital": "single",
-                "education": "professional.course",
-                "default": "no",
-                "housing": "no",
-                "loan": "yes",
-                "contact": "telephone",
-                "month": "nov",
-                "duration": 120,
-                "campaign": 4,
-                "pdays": 999,
-                "previous": 0,
-                "poutcome": "nonexistent",
-            },
-            {
-                "age": 56,
-                "job": "retired",
-                "marital": "married",
-                "education": "basic.9y",
-                "default": "no",
-                "housing": "yes",
-                "loan": "no",
-                "contact": "cellular",
-                "month": "may",
-                "duration": 310,
-                "campaign": 2,
-                "pdays": 12,
-                "previous": 2,
-                "poutcome": "success",
-            },
-        ]
-    )
-
-
-def submit_manual_customer_form() -> None:
-    raw_values = {
-        "age": st.session_state.get("manual_age"),
-        "job": st.session_state.get("manual_job"),
-        "marital": st.session_state.get("manual_marital"),
-        "education": st.session_state.get("manual_education"),
-        "default": st.session_state.get("manual_default"),
-        "housing": st.session_state.get("manual_housing"),
-        "loan": st.session_state.get("manual_loan"),
-        "contact": st.session_state.get("manual_contact"),
-        "month": st.session_state.get("manual_month"),
-        "duration": st.session_state.get("manual_duration"),
-        "campaign": st.session_state.get("manual_campaign"),
-        "pdays": st.session_state.get("manual_pdays"),
-        "previous": st.session_state.get("manual_previous"),
-        "poutcome": st.session_state.get("manual_poutcome"),
-    }
-    st.session_state["manual_form_error"] = None
-    try:
-        row = build_manual_scoring_row(raw_values)
-    except ValueError as exc:
-        st.session_state["manual_form_error"] = str(exc)
-        return
-    manual_frame = st.session_state["manual_scoring_data"].copy()
-    st.session_state["manual_scoring_data"] = pd.concat([manual_frame, pd.DataFrame([row])], ignore_index=True)
+def get_dataset_summary() -> dict:
+    return build_dataset_summary(DATA_PATH, get_evaluation_summary())
 
 
 def main() -> None:
     st.set_page_config(
-        page_title="银行零售业务智能营销决策支持系统",
+        page_title="银行营销 DSS 报告验证系统",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
     apply_theme()
 
-    training_frame = build_training_frame()
-    model_warning = st.session_state.get("model_fallback_warning")
-    if model_warning:
-        st.warning(f"当前未能加载逻辑回归模型，页面已回退到离线规则演示：{model_warning}")
+    _render_header()
+    _assert_required_artifacts()
 
-    uploaded_file = st.session_state.get("uploaded_scoring_file")
-    selected_business_customer_id = st.session_state.get("selected_business_customer_id")
+    summary = get_evaluation_summary()
+    validation_frame = get_validation_predictions()
+    bundle = get_model_bundle()
 
-    if "manual_scoring_seeded" not in st.session_state:
-        st.session_state["manual_scoring_seeded"] = True
-        st.session_state["manual_scoring_data"] = build_default_scoring_frame()
-
-    header_slot = st.container(key="hero_shell")
-    summary_slot = st.container(key="summary_shell")
-    workflow_slot = st.container(key="workflow_shell")
-
-    training_state = build_dashboard_state(
-        enriched_frame=training_frame,
-        selected_priority_levels=[],
-        selected_jobs=[],
-        selected_months=[],
-        selected_contacts=[],
-        selected_age_groups=[],
-        selected_customer_id=None,
+    tab_dataset, tab_metrics, tab_prediction, tab_llm = st.tabs(
+        [
+            "1 数据集与模型概览",
+            "2 训练与验证结果",
+            "3 客户预测验证",
+            "4 LLM画像与营销建议",
+        ]
     )
 
-    with header_slot:
-        render_dashboard_header(
-            total_customers=len(training_frame),
-            candidate_count=len(training_state["candidate_frame"]),
+    with tab_dataset:
+        _render_dataset_tab(summary)
+    with tab_metrics:
+        _render_metrics_tab(summary)
+    with tab_prediction:
+        context = _render_prediction_tab(validation_frame, summary, bundle)
+    with tab_llm:
+        _render_llm_tab(context)
+
+
+def _assert_required_artifacts() -> None:
+    missing = [
+        path
+        for path in [
+            DATA_PATH,
+            MODEL_ARTIFACT_PATH,
+            MODEL_METADATA_PATH,
+            VALIDATION_PREDICTIONS_PATH,
+            EVALUATION_SUMMARY_PATH,
+        ]
+        if not path.exists()
+    ]
+    if missing:
+        missing_text = "\n".join(str(path) for path in missing)
+        st.error(
+            "缺少系统运行所需文件，请先运行：python scripts/train_logistic_regression.py\n\n"
+            f"{missing_text}"
         )
+        st.stop()
 
-    with summary_slot:
-        render_summary_cards(training_state["dashboard_analytics"]["summary_cards"])
 
-    with workflow_slot:
-        render_workflow_steps(training_state["dashboard_analytics"]["workflow_steps"])
+def _render_header() -> None:
+    st.markdown(
+        """
+        <div class='dashboard-hero'>
+          <div class='dashboard-kicker'>REPORT-ORIENTED DECISION SUPPORT SYSTEM</div>
+          <div class='dashboard-title'>银行零售营销资源配置决策支持系统</div>
+          <div class='dashboard-subtitle'>
+            页面按报告写作顺序组织：真实数据集、训练验证、单客户预测、LLM解释与营销建议。
+            模型负责可验证预测，LLM负责管理解释，不替代模型决策。
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    with st.container(key="analytics_shell"):
-        render_section_banner(
-            "训练数据与模型概览",
-            "这里展示的是课程作业里的训练样本和分析结果，用来支撑模型训练、效果对比和答辩展示，不直接当作真实业务客户池使用。",
-            "TRAINING DATA",
+
+def _render_dataset_tab(summary: dict) -> None:
+    dataset = get_dataset_summary()
+    split = dataset["split"]
+    distribution = dataset["target_distribution"]
+    col1, col2, col3, col4 = st.columns(4, gap="medium")
+    col1.metric("数据集来源", "UCI Bank Marketing")
+    col2.metric("总样本量", f"{dataset['sample_count']:,}")
+    col3.metric("训练集", f"{split['train_size']:,}")
+    col4.metric("验证/预测集", f"{split['validation_size']:,}")
+
+    left, right = st.columns([1.1, 1], gap="large")
+    with left:
+        st.subheader("建模边界")
+        st.write(
+            "系统使用 70%/30% 分层抽样划分训练集和验证集，保持购买/未购买比例一致。"
+            "逻辑回归只在训练集上训练，验证集用于模型评估和前端案例验证。"
         )
-        analytics = training_state["dashboard_analytics"]
-        top_left, top_middle, top_right = st.columns([1.02, 0.92, 1.26], gap="medium")
-        with top_left:
-            render_distribution_panel(analytics["channel_mix"], analytics["job_rank"])
-        with top_middle:
-            render_priority_heatmap_panel(analytics["age_priority_matrix"])
-        with top_right:
-            render_month_trend_panel(analytics["month_trend"])
-
-    with st.container(key="filter_shell"):
-        render_section_banner(
-            "业务客户导入",
-            "真实业务判断应由银行员工导入待触达客户，或者现场手动录入单个客户信息。训练集只用于模型训练，不直接进入营销执行。",
-            "BUSINESS INPUT",
+        st.write("模型输入特征：")
+        st.code(" / ".join(MODEL_FEATURE_COLUMNS), language="text")
+        st.info("`duration` 是通话发生后才知道的结果变量，因此只用于历史复盘展示，不参与前置预测。")
+    with right:
+        st.subheader("目标变量分布")
+        fig = go.Figure(
+            data=[
+                go.Bar(
+                    x=["未购买 no", "购买 yes"],
+                    y=[distribution.get("no", 0), distribution.get("yes", 0)],
+                    marker_color=["#93c5fd", "#2563eb"],
+                )
+            ]
         )
-        upload_col, manual_col = st.columns([1.05, 1.35], gap="medium")
-        with upload_col:
-            render_filter_toolbar_title()
-            st.caption("导入文件字段应包含以下列，并使用分号分隔。")
-            st.code("; ".join(BUSINESS_INPUT_COLUMNS), language="text")
-            uploaded_file = st.file_uploader(
-                "上传待判断客户 CSV",
-                type=["csv"],
-                help="导入后系统会按当前规则对每个客户生成优先级、渠道建议和单客户解释。",
+        fig.update_layout(height=320, margin=dict(l=20, r=20, t=20, b=20), showlegend=False)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def _render_metrics_tab(summary: dict) -> None:
+    metrics = summary["metrics"]
+    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
+    col1.metric("AUC", f"{metrics['auc']:.4f}")
+    col2.metric("Accuracy", f"{metrics['accuracy']:.4f}")
+    col3.metric("Precision", f"{metrics['precision']:.4f}")
+    col4.metric("Recall", f"{metrics['recall']:.4f}")
+    col5.metric("F1", f"{metrics['f1']:.4f}")
+
+    left, right = st.columns([0.9, 1.1], gap="large")
+    with left:
+        st.subheader("混淆矩阵")
+        matrix = metrics["confusion_matrix"]["values"]
+        fig = go.Figure(
+            data=go.Heatmap(
+                z=matrix,
+                x=["预测 no", "预测 yes"],
+                y=["真实 no", "真实 yes"],
+                text=matrix,
+                texttemplate="%{text}",
+                colorscale="Blues",
             )
-        with manual_col:
-            st.markdown("#### 手动录入单个客户")
-            st.caption("必填字段：age / job / contact / month / campaign / previous。其他字段可先留空，系统会自动补默认值并提示影响。")
-            with st.form("manual_customer_form", clear_on_submit=False):
-                form_col1, form_col2, form_col3 = st.columns(3, gap="medium")
-                with form_col1:
-                    st.text_input("年龄*", value="40", key="manual_age")
-                    st.text_input("职业*", value="management", key="manual_job")
-                    st.selectbox("联系渠道*", options=["cellular", "telephone"], key="manual_contact")
-                    st.selectbox("月份*", options=["mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], key="manual_month")
-                    st.text_input("本次联系次数*", value="1", key="manual_campaign")
-                with form_col2:
-                    st.text_input("历史联系次数*", value="0", key="manual_previous")
-                    st.selectbox("婚姻", options=["", "single", "married", "divorced"], key="manual_marital")
-                    st.text_input("教育", value="", key="manual_education")
-                    st.selectbox("违约", options=["", "no", "yes"], key="manual_default")
-                    st.selectbox("房贷", options=["", "no", "yes"], key="manual_housing")
-                with form_col3:
-                    st.selectbox("贷款", options=["", "no", "yes"], key="manual_loan")
-                    st.text_input("通话时长", value="", key="manual_duration")
-                    st.text_input("距上次联系天数", value="", key="manual_pdays")
-                    st.selectbox("历史结果", options=["", "success", "failure", "nonexistent"], key="manual_poutcome")
-                    submitted = st.form_submit_button("加入业务客户池", use_container_width=True, on_click=submit_manual_customer_form)
-            if st.session_state.get("manual_form_error"):
-                st.warning(st.session_state["manual_form_error"])
-            required_text = "、".join(REQUIRED_BUSINESS_FIELDS)
-            st.markdown(
-                f"<div class='filter-chip-row'><span class='filter-chip'><strong>必填字段</strong>{required_text}</span><span class='filter-chip'><strong>缺失处理</strong>选填项将自动补默认值并降低结果可信度</span></div>",
-                unsafe_allow_html=True,
-            )
+        )
+        fig.update_layout(height=360, margin=dict(l=20, r=20, t=20, b=20))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with right:
+        st.subheader("主要影响因素")
+        influence_frame = pd.DataFrame(summary["feature_influences"])
+        st.dataframe(
+            influence_frame.rename(
+                columns={"feature": "特征", "coefficient": "系数", "direction": "影响方向"}
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption("系数方向用于辅助解释模型，不等同于因果关系。")
 
-    if uploaded_file is not None:
-        scoring_csv_text = uploaded_file.getvalue().decode("utf-8")
-        scoring_frame = build_scoring_frame(scoring_csv_text)
-        data_source_label = "当前来源：上传的业务客户 CSV"
+
+def _render_prediction_tab(validation_frame: pd.DataFrame, summary: dict, bundle) -> dict:
+    st.subheader("选择验证集样本或手动输入客户")
+    mode = st.radio(
+        "验证方式",
+        ["验证集样本", "手动输入客户"],
+        horizontal=True,
+    )
+
+    if mode == "验证集样本":
+        context = _build_validation_case_context(validation_frame, summary)
     else:
-        manual_frame = st.session_state["manual_scoring_data"].copy()
-        scoring_csv_text = manual_frame.to_csv(index=False, sep=";")
-        scoring_frame = build_scoring_frame(scoring_csv_text)
-        data_source_label = "当前来源：手动录入的业务客户"
+        context = _build_manual_case_context(bundle)
 
-    with st.container(key="filter_summary_shell"):
-        st.markdown(
-            f"<div class='filter-chip-row'><span class='filter-chip'><strong>业务数据</strong>{data_source_label}</span><span class='filter-chip'><strong>待判断客户数</strong>{len(scoring_frame):,}</span></div>",
-            unsafe_allow_html=True,
+    _render_prediction_result(context)
+    st.session_state["current_prediction_context"] = context
+    return context
+
+
+def _build_validation_case_context(validation_frame: pd.DataFrame, summary: dict) -> dict:
+    case_options = build_case_options(validation_frame, summary["representative_cases"])
+    label_map = {
+        int(row.customer_id): (
+            f"客户 {int(row.customer_id)} | 真实 {row.actual_label} | "
+            f"预测 {row.predicted_label} | 概率 {row.conversion_probability * 100:.1f}%"
         )
+        for row in validation_frame.itertuples()
+        if int(row.customer_id) in case_options
+    }
+    selected_id = st.selectbox(
+        "选择验证集客户",
+        options=case_options,
+        format_func=lambda value: label_map.get(int(value), f"客户 {value}"),
+    )
+    row = validation_frame.loc[validation_frame["customer_id"] == selected_id].iloc[0]
+    return build_prediction_context_from_validation(row, summary["feature_influences"])
 
-    with st.container(key="workspace_shell"):
-        render_section_banner(
-            "业务客户决策工作台",
-            "这里展示的才是实际待判断客户。系统会对导入客户生成分层、推荐渠道、单客户解释和建议话术，直接对应你的 DSS 业务逻辑。",
-            "EXECUTION DESK",
+
+def _build_manual_case_context(bundle) -> dict:
+    with st.form("manual_prediction_form"):
+        cols = st.columns(3, gap="medium")
+        with cols[0]:
+            age = st.number_input("年龄*", min_value=18, max_value=100, value=40)
+            job = st.text_input("职业*", value="management")
+            contact = st.selectbox("联系渠道*", ["cellular", "telephone"])
+            month = st.selectbox("月份*", ["mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])
+            campaign = st.number_input("本次联系次数*", min_value=1, max_value=20, value=1)
+        with cols[1]:
+            previous = st.number_input("历史联系次数*", min_value=0, max_value=20, value=0)
+            marital = st.selectbox("婚姻", ["unknown", "single", "married", "divorced"])
+            education = st.text_input("教育", value="university.degree")
+            default = st.selectbox("违约", ["unknown", "no", "yes"])
+            housing = st.selectbox("房贷", ["unknown", "no", "yes"])
+        with cols[2]:
+            loan = st.selectbox("个人贷", ["unknown", "no", "yes"])
+            duration = st.number_input("通话时长（仅复盘展示）", min_value=0, max_value=5000, value=0)
+            pdays = st.number_input("距上次联系天数", min_value=0, max_value=999, value=999)
+            poutcome = st.selectbox("历史结果", ["unknown", "success", "failure", "nonexistent"])
+            st.form_submit_button("生成预测结果", use_container_width=True)
+
+    raw_values = {
+        "age": age,
+        "job": job,
+        "marital": marital,
+        "education": education,
+        "default": default,
+        "housing": housing,
+        "loan": loan,
+        "contact": contact,
+        "month": month,
+        "duration": duration,
+        "campaign": campaign,
+        "pdays": pdays,
+        "previous": previous,
+        "poutcome": poutcome,
+    }
+    return build_prediction_context_from_manual(raw_values, bundle)
+
+
+def _render_prediction_result(context: dict) -> None:
+    result = context["model_result"]
+    features = context["features"]
+    col1, col2, col3, col4 = st.columns(4, gap="medium")
+    col1.metric("预测购买概率", f"{result['conversion_probability'] * 100:.1f}%")
+    col2.metric("预测类别", result["predicted_label"])
+    col3.metric("营销优先级", result["priority_level"])
+    col4.metric("推荐渠道", result["recommended_channel"])
+
+    left, right = st.columns([1, 1], gap="large")
+    with left:
+        st.subheader("客户特征")
+        feature_frame = pd.DataFrame(
+            [{"字段": key, "取值": value} for key, value in features.items() if key in BUSINESS_INPUT_COLUMNS]
         )
-
-        filter_columns = st.columns(5, gap="medium")
-        with filter_columns[0]:
-            selected_priority_levels = st.multiselect(
-                "客户价值层级",
-                PRIORITY_LEVELS,
-                placeholder="选择价值层级",
-            )
-        with filter_columns[1]:
-            selected_jobs = st.multiselect(
-                "职业",
-                sorted(scoring_frame["job"].unique().tolist()),
-                placeholder="选择职业",
-            )
-        with filter_columns[2]:
-            selected_months = st.multiselect(
-                "月份",
-                sorted(scoring_frame["month"].unique().tolist()),
-                placeholder="选择月份",
-            )
-        with filter_columns[3]:
-            selected_contacts = st.multiselect(
-                "联系渠道",
-                sorted(scoring_frame["contact"].unique().tolist()),
-                placeholder="选择联系渠道",
-            )
-        with filter_columns[4]:
-            selected_age_groups = st.multiselect(
-                "年龄层级",
-                AGE_GROUP_LABELS,
-                placeholder="选择年龄层级",
-            )
-
-        render_filter_summary(
-            selected_priority_levels,
-            selected_jobs,
-            selected_months,
-            selected_contacts,
-            selected_age_groups,
-        )
-
-        base_state = build_dashboard_state(
-            enriched_frame=scoring_frame,
-            selected_priority_levels=selected_priority_levels,
-            selected_jobs=selected_jobs,
-            selected_months=selected_months,
-            selected_contacts=selected_contacts,
-            selected_age_groups=selected_age_groups,
-            selected_customer_id=selected_business_customer_id,
-        )
-
-        final_state = base_state
-        if base_state["candidate_frame"].empty:
-            st.info("当前业务筛选条件下没有待判断客户，请调整筛选器或导入新的客户数据。")
+        st.dataframe(feature_frame, hide_index=True, use_container_width=True)
+    with right:
+        st.subheader("验证结果")
+        if result.get("actual_label") is None:
+            st.info("该客户来自手动输入，没有真实标签。")
         else:
-            options = base_state["candidate_frame"]["customer_id"].tolist()
-            labels = dict(zip(base_state["candidate_frame"]["customer_id"], base_state["candidate_frame"]["customer_label"]))
-            chosen_customer_id = st.selectbox(
-                "当前查看业务客户",
-                options=options,
-                index=options.index(base_state["selected_customer_id"]),
-                format_func=lambda item: labels[item],
-            )
-            st.session_state["selected_business_customer_id"] = chosen_customer_id
-            final_state = build_dashboard_state(
-                enriched_frame=scoring_frame,
-                selected_priority_levels=selected_priority_levels,
-                selected_jobs=selected_jobs,
-                selected_months=selected_months,
-                selected_contacts=selected_contacts,
-                selected_age_groups=selected_age_groups,
-                selected_customer_id=chosen_customer_id,
-            )
+            st.write(f"真实标签：`{result['actual_label']}`")
+            st.write(f"预测是否正确：`{'是' if result['is_correct'] else '否'}`")
+        st.write(f"推荐产品：`{result['product_name']}`")
+        st.write(result["recommended_action"])
 
-        bottom_left, bottom_right = st.columns([0.82, 1.38], gap="medium")
-        with bottom_left:
-            render_candidate_snapshot_panel(final_state["candidate_frame"], final_state["selected_customer_id"])
-            render_channel_matrix_panel(final_state["dashboard_analytics"]["channel_matrix"])
 
-        with bottom_right:
-            if final_state["selected_customer"] is None:
-                st.info("请选择一个业务客户查看决策详情。")
-            else:
-                notice = final_state["selected_customer"].get("missing_field_notice")
-                if isinstance(notice, dict):
-                    st.warning(
-                        f"字段完整度 {int(notice['completeness_ratio'] * 100)}%。{notice['impact_text']}"
-                    )
-                decision_tab, table_tab = st.tabs(["单客户决策", "业务客户明细表"])
-                with decision_tab:
-                    render_customer_detail(
-                        final_state["selected_customer"],
-                        final_state["selected_decision"],
-                        final_state["customer_explanation"],
-                        final_state["customer_script"],
-                    )
-                with table_tab:
-                    render_candidate_table(final_state["candidate_frame"])
+def _render_llm_tab(context: dict) -> None:
+    if context is None:
+        context = st.session_state.get("current_prediction_context")
+    if context is None:
+        st.info("请先在“客户预测验证”页选择或输入一个客户。")
+        return
+
+    sections = build_structured_llm_sections(context)
+    st.info("LLM 解释基于模型输出和客户字段生成，不参与购买概率预测，也不改变营销优先级。")
+    col1, col2, col3 = st.columns(3, gap="medium")
+    col1.markdown("#### 客户画像")
+    col1.write(sections["customer_profile"])
+    col2.markdown("#### 营销建议")
+    col2.write(sections["marketing_strategy"])
+    col3.markdown("#### 风险与注意事项")
+    col3.write(sections["risk_note"])
+    st.markdown("#### 推荐话术")
+    st.success(sections["marketing_script"])
 
 
 if __name__ == "__main__":

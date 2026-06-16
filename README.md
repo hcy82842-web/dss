@@ -26,8 +26,8 @@
 ### 1. Streamlit 展示层
 
 - 入口：`app.py`
-- 负责训练数据概览、业务客户录入、批量导入、客户筛选、单客户决策详情展示。
-- 页面优先加载 `artifacts/logistic_regression.joblib` 进行模型评分；模型不可用时才回退到离线规则演示。
+- 页面按报告写作顺序组织为 4 个 Tab：数据集与模型概览、训练与验证结果、客户预测验证、LLM 画像与营销建议。
+- 前端负责输入、触发、展示和报告截图；模型训练、验证和预测逻辑由后端/服务层提供。
 
 ### 2. FastAPI 后端
 
@@ -131,8 +131,10 @@ python scripts/train_logistic_regression.py
 
 - `artifacts/logistic_regression.joblib`
 - `artifacts/model_metadata.json`
+- `artifacts/validation_predictions.csv`
+- `artifacts/evaluation_summary.json`
 
-`model_metadata.json` 包含 AUC、Accuracy、Precision、Recall、F1、混淆矩阵、正类召回率和主要特征影响方向。
+`model_metadata.json` 包含 AUC、Accuracy、Precision、Recall、F1、混淆矩阵、正类召回率和主要特征影响方向。`validation_predictions.csv` 保存 30% 验证集上的真实标签、预测概率、预测类别和营销优先级，供前端进行单客户案例验证。
 
 ## 手动启动方式
 
@@ -165,9 +167,16 @@ uvicorn src.dss_backend.main:create_default_app --factory --reload
 
 1. 放置 `data/bank-additional-full.csv`。
 2. 运行 `run_demo.bat`。
-3. 打开 Streamlit 工作台。
-4. 导入或录入业务客户。
-5. 查看模型评分、优先级、推荐渠道、LLM 解释和营销话术。
+3. 打开 Streamlit 报告验证页面。
+4. 在“客户预测验证”页选择验证集样本或手动输入客户。
+5. 查看模型评分、真实标签、预测是否正确、优先级、推荐渠道、LLM 客户画像和营销建议。
+
+## 页面结构
+
+- `数据集与模型概览`：展示 UCI 数据来源、样本量、目标变量分布、训练/验证划分和建模边界。
+- `训练与验证结果`：展示 AUC、Accuracy、Precision、Recall、F1、混淆矩阵和主要影响因素。
+- `客户预测验证`：从验证集中选择真实客户，或手动输入客户，查看逻辑回归预测结果。
+- `LLM画像与营销建议`：基于当前客户的模型输出生成客户画像、营销策略、风险提示和推荐话术。
 
 ## 测试
 

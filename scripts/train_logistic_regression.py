@@ -20,6 +20,8 @@ def main() -> None:
         csv_path=csv_path,
         model_path="artifacts/logistic_regression.joblib",
         metadata_path="artifacts/model_metadata.json",
+        validation_predictions_path="artifacts/validation_predictions.csv",
+        evaluation_summary_path="artifacts/evaluation_summary.json",
     )
     print(metrics)
 

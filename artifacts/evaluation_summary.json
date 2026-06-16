@@ -1,31 +1,19 @@
 {
-  "model_name": "logistic_regression",
-  "feature_columns": [
-    "age",
-    "job",
-    "marital",
-    "education",
-    "default",
-    "housing",
-    "loan",
-    "contact",
-    "month",
-    "campaign",
-    "pdays",
-    "previous",
-    "poutcome"
-  ],
-  "excluded_columns": {
-    "duration": "通话时长属于营销接触发生后的结果变量，本系统将其用于复盘展示，不参与前置客户筛选预测。"
+  "dataset": {
+    "source": "UCI Bank Marketing bank-additional-full.csv",
+    "sample_count": 41188,
+    "raw_feature_count": 21,
+    "model_feature_count": 13,
+    "target_distribution": {
+      "no": 36548,
+      "yes": 4640
+    }
   },
   "split": {
-    "strategy": "train_test_split",
-    "train_ratio": 0.7,
-    "validation_ratio": 0.3,
-    "random_state": 42,
-    "stratify": "y",
     "train_size": 28831,
-    "validation_size": 12357
+    "validation_size": 12357,
+    "validation_ratio": 0.3,
+    "stratified_by": "y"
   },
   "metrics": {
     "auc": 0.7693,
@@ -112,5 +100,11 @@
       "coefficient": 0.5787,
       "direction": "提高购买概率"
     }
-  ]
+  ],
+  "representative_cases": {
+    "high_probability_correct_yes": 40349,
+    "medium_probability_case": 25029,
+    "low_probability_correct_no": 5140,
+    "misclassified_case": 40181
+  }
 }
